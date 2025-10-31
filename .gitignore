@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Xcode
+DerivedData/
+build/
+*.xcuserdatad
+*.xcuserstate
+
+# Swift Package Manager
+.swiftpm/
+SourcePackages/
+
+# CocoaPods
+Pods/
+
+# Cursor/Editor artifacts
+.cursor/
+.cursorignore
+
+# Markdown (do not push docs)
+*.md
+
+
