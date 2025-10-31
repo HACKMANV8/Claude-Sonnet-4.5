@@ -15,6 +15,8 @@ struct PaymentSuccessView: View {
     @State private var pulseAnimation = false
     @State private var pendingReward: ContextReward? = nil
     @State private var isClaiming: Bool = false
+    @State private var showVoucherSheet: Bool = false
+    @State private var suggestedBrand: String? = nil
     
     var body: some View {
         ZStack {
@@ -148,6 +150,23 @@ struct PaymentSuccessView: View {
                                 .cornerRadius(12)
                             }
                             .disabled(isClaiming)
+
+                            if let brand = suggestedBrand {
+                                Button {
+                                    showVoucherSheet = true
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "giftcard")
+                                        Text("Redeem coins for \(brand) voucher")
+                                            .fontWeight(.semibold)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color(.tertiarySystemBackground))
+                                    .foregroundColor(.primary)
+                                    .cornerRadius(12)
+                                }
+                            }
                         }
                         .padding(16)
                         .background(Color(.secondarySystemBackground))
@@ -278,6 +297,22 @@ struct PaymentSuccessView: View {
             } else {
                 pendingReward = nil
             }
+            // Infer e‑com brand from payee for voucher nudge
+            let rec = (payeeName ?? "").lowercased()
+            if rec.contains("flipkart") { suggestedBrand = "Flipkart" }
+            else if rec.contains("amazon") { suggestedBrand = "Amazon" }
+            else if rec.contains("myntra") { suggestedBrand = "Myntra" }
+            else { suggestedBrand = nil }
+        }
+        .sheet(isPresented: $showVoucherSheet) {
+            if let brand = suggestedBrand {
+                QuickVoucherSheet(brand: brand, balanceCoins: nil) { coins in
+                    Task { @MainActor in
+                        guard let uid = Auth.auth().currentUser?.uid else { return }
+                        try? await RewardsService.shared.redeemCoins(uid: uid, amount: coins, note: "Voucher \(brand)")
+                    }
+                }
+            }
         }
     }
     
@@ -315,6 +350,77 @@ extension PaymentSuccessView {
             } catch {
                 // no-op demo error handling
             }
+        }
+    }
+}
+
+// MARK: - Quick Voucher Sheet (inline, minimal)
+private struct QuickVoucherSheet: View {
+    let brand: String
+    let balanceCoins: Int?
+    var onRedeem: (Int) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var coinsText: String = "1000"
+    @State private var code: String? = nil
+
+    var coinsToSpend: Int { max(1, Int(coinsText) ?? 0) }
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    VStack(spacing: 8) {
+                        Text("Redeem \(brand) Voucher").font(.title2).bold()
+                        Text("Exchange coins for a \(brand) code").font(.subheadline).foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Enter Coins").font(.headline)
+                        TextField("1000", text: $coinsText)
+                            .keyboardType(.numberPad)
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .multilineTextAlignment(.center)
+                            .padding()
+                            .background(Color(.secondarySystemBackground))
+                            .cornerRadius(12)
+                        if let bal = balanceCoins {
+                            HStack { Text("Balance"); Spacer(); Text("\(bal) coins") }.foregroundColor(.secondary)
+                        }
+                    }
+                    .padding()
+                    .background(Color(.tertiarySystemBackground))
+                    .cornerRadius(16)
+
+                    if let c = code {
+                        VStack(spacing: 8) {
+                            Text("Voucher Generated!").font(.headline).foregroundColor(.green)
+                            Text(c).font(.system(size: 22, weight: .bold, design: .monospaced))
+                                .padding().background(Color(.secondarySystemBackground)).cornerRadius(10)
+                        }
+                    }
+
+                    Button {
+                        onRedeem(coinsToSpend)
+                        code = "\(brand.prefix(3).uppercased())-\(Int.random(in: 1000...9999))-\(Int.random(in: 1000...9999))"
+                    } label: {
+                        Text("Redeem Now")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.accentColor)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
+                    }
+
+                    Button { dismiss() } label: {
+                        Text("Close").frame(maxWidth: .infinity).padding()
+                            .background(Color(.secondarySystemBackground)).cornerRadius(12)
+                    }
+                }
+                .padding()
+            }
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
