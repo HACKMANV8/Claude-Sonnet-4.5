@@ -98,8 +98,11 @@ struct TicTacToeGameView: View {
                             tapCell(idx)
                         } label: {
                             ZStack {
+                                // Translucent square with subtle border so targets are obvious
                                 RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color(.secondarySystemBackground))
+                                    .fill(Color.primary.opacity(0.06))
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.primary.opacity(0.15), lineWidth: 1)
                                     .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 2)
                                 Text(board[idx])
                                     .font(.system(size: 42, weight: .bold))
