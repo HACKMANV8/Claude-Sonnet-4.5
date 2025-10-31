@@ -26,6 +26,7 @@ struct QRScannerView: View {
                 HStack {
                     Spacer()
                     Button {
+                        NotificationCenter.default.post(name: .switchTab, object: nil, userInfo: ["index": 0])
                         dismiss()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
