@@ -211,17 +211,26 @@ struct PaymentSuccessView: View {
                     .allowsHitTesting(false)
             }
         }
-        .navigationBarHidden(true)
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    NotificationCenter.default.post(name: .paymentCompleted, object: nil)
+                    NotificationCenter.default.post(name: .switchTab, object: nil, userInfo: ["index": 0])
+                    dismiss()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Home")
+                    }
+                    .foregroundColor(.accentColor)
+                }
+            }
+        }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: [generateShareText()])
-        }
-        .onAppear {
-            // Auto-redirect to Home after a short celebration
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                NotificationCenter.default.post(name: .paymentCompleted, object: nil)
-                NotificationCenter.default.post(name: .switchTab, object: nil, userInfo: ["index": 0])
-                dismiss()
-            }
         }
     }
     

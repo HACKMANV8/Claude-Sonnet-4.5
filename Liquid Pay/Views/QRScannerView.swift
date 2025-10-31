@@ -1,10 +1,16 @@
 import SwiftUI
 import AVFoundation
 import Combine
+import PhotosUI
+import CoreImage
 
 struct QRScannerView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var scanner = QRScanner()
+    @State private var showImagePicker = false
+    @State private var selectedImage: UIImage?
+    @State private var showError = false
+    @State private var errorMessage = ""
     var onCodeScanned: (String) -> Void
     
     var body: some View {
@@ -43,7 +49,26 @@ struct QRScannerView: View {
                         .font(.subheadline)
                         .foregroundColor(.white.opacity(0.8))
                 }
-                .padding(.bottom, 80)
+                .padding(.bottom, 20)
+                
+                // Gallery upload button
+                Button {
+                    showImagePicker = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.system(size: 20))
+                        Text("Upload from Gallery")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(Color.accentColor)
+                    .cornerRadius(12)
+                    .shadow(radius: 4)
+                }
+                .padding(.bottom, 60)
             }
             
             // Scanning frame overlay
@@ -66,6 +91,88 @@ struct QRScannerView: View {
                     }
                     .frame(width: 250, height: 250)
                 )
+        }
+        .sheet(isPresented: $showImagePicker) {
+            ImagePicker(selectedImage: $selectedImage)
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage)
+        }
+        .onChange(of: selectedImage) { newImage in
+            if let image = newImage {
+                detectQRCode(in: image)
+            }
+        }
+    }
+    
+    private func detectQRCode(in image: UIImage) {
+        guard let ciImage = CIImage(image: image) else {
+            errorMessage = "Failed to process image"
+            showError = true
+            return
+        }
+        
+        let context = CIContext()
+        let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: context, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
+        
+        guard let features = detector?.features(in: ciImage) as? [CIQRCodeFeature] else {
+            errorMessage = "No QR code found in the image"
+            showError = true
+            return
+        }
+        
+        if let firstFeature = features.first, let qrString = firstFeature.messageString {
+            onCodeScanned(qrString)
+            dismiss()
+        } else {
+            errorMessage = "No QR code found in the image"
+            showError = true
+        }
+    }
+}
+
+// MARK: - Image Picker
+struct ImagePicker: UIViewControllerRepresentable {
+    @Binding var selectedImage: UIImage?
+    @Environment(\.dismiss) private var dismiss
+    
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration()
+        config.filter = .images
+        config.selectionLimit = 1
+        
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = context.coordinator
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        let parent: ImagePicker
+        
+        init(_ parent: ImagePicker) {
+            self.parent = parent
+        }
+        
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            parent.dismiss()
+            
+            guard let provider = results.first?.itemProvider else { return }
+            
+            if provider.canLoadObject(ofClass: UIImage.self) {
+                provider.loadObject(ofClass: UIImage.self) { image, error in
+                    DispatchQueue.main.async {
+                        self.parent.selectedImage = image as? UIImage
+                    }
+                }
+            }
         }
     }
 }

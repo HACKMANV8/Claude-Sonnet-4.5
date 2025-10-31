@@ -16,17 +16,19 @@ struct CurrencyRate: Identifiable, Codable {
     }
 }
 
+// Legacy schema (exchangerate-api v4) - kept for compatibility if used
 struct ExchangeRateResponse: Codable {
-    let result: String
-    let base_code: String
-    let rates: [String: Double]
+    let result: String?
+    let base_code: String?
+    let rates: [String: Double]?
     let time_last_update_unix: Int?
-    
-    enum CodingKeys: String, CodingKey {
-        case result
-        case base_code
-        case rates
-        case time_last_update_unix
-    }
+}
+
+// exchangerate.host schema (preferred)
+struct ExchangeRateHostResponse: Codable {
+    let success: Bool?
+    let base: String?
+    let date: String?
+    let rates: [String: Double]?
 }
 

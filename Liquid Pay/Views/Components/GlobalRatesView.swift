@@ -1,128 +1,80 @@
 import SwiftUI
 
 struct GlobalRatesView: View {
-    @StateObject private var currencyService = CurrencyService.shared
-    @AppStorage("selected_currencies") private var selectedCurrenciesJSON: String = ""
+    @StateObject private var rateManager = CurrencyRateManager.shared
     @State private var showEditSheet: Bool = false
-    @State private var selectedCurrencies: [String] = ["USD", "EUR", "GBP"]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
+            // Single card container with gradient background
+            VStack(alignment: .leading, spacing: 16) {
+                // Header
+                HStack {
                     Text("Global Rates")
                         .font(.title2)
                         .fontWeight(.bold)
+                        .foregroundColor(.white)
                     
-                    if let lastUpdated = currencyService.lastUpdated {
-                        Text("Updated \(timeAgo(lastUpdated))")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                HStack(spacing: 12) {
-                    // Refresh button
-                    Button {
-                        Task {
-                            await currencyService.fetchRates()
-                        }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.accentColor)
-                            .rotationEffect(.degrees(currencyService.isLoading ? 360 : 0))
-                            .animation(currencyService.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: currencyService.isLoading)
-                    }
-                    .disabled(currencyService.isLoading)
+                    Spacer()
                     
                     // Edit button
                     Button {
                         showEditSheet = true
                     } label: {
-                        Image(systemName: "slider.horizontal.3")
+                        Image(systemName: "ellipsis")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(.white)
                     }
                 }
-            }
-            .padding(.horizontal, 4)
-            
-            // Rates Grid
-            if currencyService.rates.isEmpty {
-                VStack(spacing: 8) {
-                    if currencyService.isLoading {
-                        ProgressView()
-                            .padding()
-                    } else {
-                        Text("Tap refresh to load rates")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .padding()
+                
+                // Rates - Horizontal centered
+                if rateManager.currencyRates.isEmpty {
+                    VStack(spacing: 8) {
+                        if rateManager.isLoading {
+                            ProgressView()
+                                .tint(.white)
+                                .padding()
+                        } else {
+                            Text("Tap refresh to load rates")
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding()
+                        }
                     }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 100)
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
-            } else {
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 12) {
-                    ForEach(getDisplayedRates()) { rate in
-                        RateCard(rate: rate)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 80)
+                } else {
+                    HStack(spacing: 24) {
+                        ForEach(rateManager.currencyRates) { rate in
+                            CompactPairRateView(rate: rate)
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+                }
+                
+                if let error = rateManager.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.8))
                 }
             }
-            
-            if let error = currencyService.errorMessage {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .padding(.horizontal, 4)
-            }
+            .padding(20)
+            .background(
+                LinearGradient(
+                    colors: [Color(red: 0.1, green: 0.3, blue: 0.4), Color(red: 0.05, green: 0.2, blue: 0.3)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .cornerRadius(16)
         }
         .onAppear {
-            loadSelectedCurrencies()
-            currencyService.startAutoRefresh()
-        }
-        .onDisappear {
-            currencyService.stopAutoRefresh()
+            rateManager.refresh()
         }
         .sheet(isPresented: $showEditSheet) {
-            CurrencySelectionSheet(
-                selectedCurrencies: $selectedCurrencies,
-                availableRates: currencyService.rates
-            )
-            .onDisappear {
-                saveSelectedCurrencies()
+            PairSelectionSheet(currentPairs: rateManager.selectedPairs) { newPairs in
+                rateManager.setSelectedPairs(newPairs)
             }
-        }
-    }
-    
-    private func getDisplayedRates() -> [CurrencyRate] {
-        let selected = selectedCurrencies.isEmpty ? ["USD", "EUR", "GBP"] : selectedCurrencies
-        return currencyService.rates.filter { selected.contains($0.code) }
-    }
-    
-    private func loadSelectedCurrencies() {
-        if let data = selectedCurrenciesJSON.data(using: .utf8),
-           let decoded = try? JSONDecoder().decode([String].self, from: data) {
-            selectedCurrencies = decoded
-        } else {
-            selectedCurrencies = ["USD", "EUR", "GBP"]
-        }
-    }
-    
-    private func saveSelectedCurrencies() {
-        if let encoded = try? JSONEncoder().encode(selectedCurrencies),
-           let json = String(data: encoded, encoding: .utf8) {
-            selectedCurrenciesJSON = json
         }
     }
     
@@ -143,149 +95,100 @@ struct GlobalRatesView: View {
     }
 }
 
-// MARK: - Rate Card
-private struct RateCard: View {
-    let rate: CurrencyRate
+// MARK: - Compact Pair Rate View (for horizontal layout)
+private struct CompactPairRateView: View {
+    let rate: CurrencyPairRate
     
-    var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 4) {
-                Text(rate.code)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.accentColor)
-                
-                Text(rate.symbol)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-            }
-            
-            Text(formatRate(rate.rate))
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(.primary)
-            
-            Text(rate.name)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+    private func symbol(for code: String) -> String {
+        switch code {
+        case "INR": return "₹"
+        case "USD": return "$"
+        case "EUR": return "€"
+        case "GBP": return "£"
+        case "JPY": return "¥"
+        case "AED": return "د.إ"
+        case "SGD": return "S$"
+        default: return ""
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .padding(.horizontal, 8)
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
     }
     
-    private func formatRate(_ rate: Double) -> String {
-        if rate >= 1 {
-            return String(format: "₹%.2f", rate)
-        } else {
-            return String(format: "₹%.4f", rate)
+    var body: some View {
+        VStack(spacing: 6) {
+            Text("\(rate.fromCurrency)/\(rate.toCurrency)")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white.opacity(0.8))
+            
+            Text(formatRate(rate.rate, code: rate.toCurrency))
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(.white)
         }
+    }
+    
+    private func formatRate(_ r: Double, code: String) -> String {
+        let sym = symbol(for: code)
+        if r >= 1 { return String(format: "\(sym)%.2f", r) }
+        return String(format: "\(sym)%.4f", r)
     }
 }
 
-// MARK: - Currency Selection Sheet
-private struct CurrencySelectionSheet: View {
-    @Binding var selectedCurrencies: [String]
-    let availableRates: [CurrencyRate]
+// MARK: - Pair Selection Sheet (simple: choose base → INR pairs)
+private struct PairSelectionSheet: View {
+    let currentPairs: [(String, String)]
+    var onSave: ([(String, String)]) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedBases: Set<String> = []
     @State private var searchText: String = ""
     
-    private var displayedRates: [CurrencyRate] {
-        if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
-            return availableRates
-        }
-        let query = searchText.lowercased()
-        return availableRates.filter {
-            $0.code.lowercased().contains(query) ||
-            $0.name.lowercased().contains(query)
-        }
+    private let toCurrency = "INR"
+    private let availableCodes: [String] = [
+        "USD","EUR","GBP","AUD","CAD","JPY","AED","SGD","CHF","CNY","NZD","SEK","KRW","MYR","THB","ZAR","BRL","MXN"
+    ]
+    
+    private var filteredCodes: [String] {
+        let q = searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        if q.isEmpty { return availableCodes }
+        return availableCodes.filter { $0.lowercased().contains(q) }
     }
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                // Info banner
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundColor(.accentColor)
-                    Text("Select up to 6 currencies to display")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("\(selectedCurrencies.count)/6")
-                        .font(.caption)
-                        .foregroundColor(selectedCurrencies.count >= 6 ? .red : .secondary)
-                }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                
-                List {
-                    ForEach(displayedRates) { rate in
-                        Button {
-                            toggleSelection(rate.code)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack(spacing: 6) {
-                                        Text(rate.code)
-                                            .font(.system(size: 16, weight: .semibold))
-                                        Text(rate.symbol)
-                                            .font(.system(size: 14))
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Text(rate.name)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                
-                                Spacer()
-                                
-                                if selectedCurrencies.contains(rate.code) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
-                                        .font(.system(size: 20))
-                                } else {
-                                    Image(systemName: "circle")
-                                        .foregroundColor(.secondary)
-                                        .font(.system(size: 20))
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+            List(filteredCodes, id: \.self) { code in
+                Button {
+                    toggle(code)
+                } label: {
+                    HStack {
+                        Text("\(code) → \(toCurrency)").font(.body)
+                        Spacer()
+                        Image(systemName: selectedBases.contains(code) ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(selectedBases.contains(code) ? .green : .secondary)
                     }
                 }
-                .listStyle(.plain)
-                .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search currencies")
             }
-            .navigationTitle("Select Currencies")
-            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText)
+            .navigationTitle("Select Pairs")
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Reset") { selectedBases = Set(["USD","GBP","EUR"]) }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
+                        let pairs = selectedBases.map { ($0, toCurrency) }
+                        onSave(pairs.sorted { $0.0 < $1.0 })
                         dismiss()
                     }
                 }
-                
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Reset") {
-                        selectedCurrencies = ["USD", "EUR", "GBP"]
-                    }
-                }
+            }
+            .onAppear {
+                let bases = currentPairs.filter { $0.1 == toCurrency }.map { $0.0 }
+                if bases.isEmpty { selectedBases = Set(["USD","GBP","EUR"]) }
+                else { selectedBases = Set(bases) }
             }
         }
     }
     
-    private func toggleSelection(_ code: String) {
-        if selectedCurrencies.contains(code) {
-            selectedCurrencies.removeAll { $0 == code }
-        } else {
-            if selectedCurrencies.count < 6 {
-                selectedCurrencies.append(code)
-            }
-        }
+    private func toggle(_ code: String) {
+        if selectedBases.contains(code) { selectedBases.remove(code) }
+        else if selectedBases.count < 6 { selectedBases.insert(code) }
     }
 }
 

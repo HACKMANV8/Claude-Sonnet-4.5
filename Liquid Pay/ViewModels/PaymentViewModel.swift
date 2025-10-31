@@ -69,8 +69,10 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
     }
 
     nonisolated func onPaymentSuccess(_ payment_id: String, andData data: [AnyHashable : Any]?) {
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self = self else { return }
+            
+            print("✅ Payment Success Callback - Payment ID: \(payment_id)")
             
             self.lastResultMessage = "Payment success: \(payment_id)"
             
@@ -96,14 +98,21 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
             self.successPayment = payment
             self.successPayeeName = self.currentPayeeName
             self.successCoinsEarned = coins
+            
+            print("✅ Setting showSuccessScreen = true")
+            
+            // Give Razorpay a moment to dismiss, then show success screen
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
             self.showSuccessScreen = true
+            
+            print("✅ showSuccessScreen is now: \(self.showSuccessScreen)")
             
             // Record payment
             Task { await self.record(status: "success", paymentId: payment_id) }
             
             // Optimistically award coins (server webhook also awards idempotently)
-            Task { [weak self] in
-                guard let self = self, let uid = Auth.auth().currentUser?.uid else { return }
+            Task {
+                guard let uid = Auth.auth().currentUser?.uid else { return }
                 try? await RewardsService.shared.awardCoinsForPayment(uid: uid, paymentId: payment_id, amountPaise: self.currentAmountPaise)
                 
                 // Send notification

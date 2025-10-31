@@ -35,7 +35,8 @@ final class ContactsService: ObservableObject {
     @Published var errorMessage: String?
     @Published var authorizationStatus: CNAuthorizationStatus = .notDetermined
     
-    private let store = CNContactStore()
+    // Create CNContactStore only when needed to avoid unused initialization warnings
+    // and to keep access localized to the requesting context
     
     init() {
         authorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
@@ -43,7 +44,7 @@ final class ContactsService: ObservableObject {
     
     func requestAccess() async -> Bool {
         do {
-            let granted = try await store.requestAccess(for: .contacts)
+            let granted = try await CNContactStore().requestAccess(for: .contacts)
             authorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
             if granted {
                 await fetchContacts()

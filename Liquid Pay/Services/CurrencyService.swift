@@ -11,7 +11,8 @@ final class CurrencyService: ObservableObject {
     @Published var errorMessage: String?
     
     private var refreshTimer: Timer?
-    private let baseURL = "https://api.exchangerate-api.com/v4/latest/INR"
+    // Use exchangerate.host (no API key required, reliable)
+    private let baseURL = "https://api.exchangerate.host/latest?base=INR"
     
     // Currency metadata
     private let currencyInfo: [String: (name: String, symbol: String)] = [
@@ -79,19 +80,29 @@ final class CurrencyService: ObservableObject {
             }
             
             let decoder = JSONDecoder()
-            let result = try decoder.decode(ExchangeRateResponse.self, from: data)
-            
-            // Convert to CurrencyRate objects
             var newRates: [CurrencyRate] = []
-            for (code, rate) in result.rates {
-                if let info = currencyInfo[code] {
-                    newRates.append(CurrencyRate(
-                        code: code,
-                        name: info.name,
-                        rate: rate,
-                        symbol: info.symbol
-                    ))
+            
+            // Try exchangerate.host schema first
+            if let host = try? decoder.decode(ExchangeRateHostResponse.self, from: data),
+               let ratesDict = host.rates {
+                // host returns target-per-INR; for display we want INR per 1 target unit → invert
+                for (code, unitPerINR) in ratesDict {
+                    if let info = currencyInfo[code], unitPerINR > 0 {
+                        let inrPerUnit = 1.0 / unitPerINR
+                        newRates.append(CurrencyRate(code: code, name: info.name, rate: inrPerUnit, symbol: info.symbol))
+                    }
                 }
+            } else if let legacy = try? decoder.decode(ExchangeRateResponse.self, from: data),
+                      let ratesDict = legacy.rates {
+                // Legacy schema assumed the same direction (target-per-INR); invert
+                for (code, unitPerINR) in ratesDict {
+                    if let info = currencyInfo[code], unitPerINR > 0 {
+                        let inrPerUnit = 1.0 / unitPerINR
+                        newRates.append(CurrencyRate(code: code, name: info.name, rate: inrPerUnit, symbol: info.symbol))
+                    }
+                }
+            } else {
+                throw NSError(domain: "CurrencyService", code: 422, userInfo: [NSLocalizedDescriptionKey: "Unexpected response format"])
             }
             
             // Sort by code

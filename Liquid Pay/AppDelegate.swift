@@ -1,6 +1,7 @@
 import UIKit
 import FirebaseCore
 import FirebaseAuth
+import UserNotifications
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
@@ -12,6 +13,10 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         #endif
         // Register for remote notifications so Firebase Auth can verify via silent push
         UIApplication.shared.registerForRemoteNotifications()
+        
+        // Set notification delegate to handle foreground notifications
+        UNUserNotificationCenter.current().delegate = self
+        
         return true
     }
 
@@ -39,6 +44,25 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             return true
         }
         return false
+    }
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    // This method is called when a notification is delivered to a foreground app
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Show notification even when app is in foreground
+        completionHandler([.banner, .sound, .badge])
+    }
+    
+    // This method is called when the user taps on a notification
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        // Handle notification tap if needed
+        completionHandler()
     }
 }
 
