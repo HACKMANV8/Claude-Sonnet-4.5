@@ -26,7 +26,8 @@
 	<string>We need access to your contacts to make payments easily</string>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-1615735364940908~8282583220</string>
-	<key>GADInterstitialAdUnitID</key>
-	<string>ca-app-pub-1615735364940908/8025779962</string>
+	<!-- Temporarily disabled to use test ad unit ID -->
+	<!-- <key>GADInterstitialAdUnitID</key>
+	<string>ca-app-pub-1615735364940908/8025779962</string> -->
 </dict>
 </plist>

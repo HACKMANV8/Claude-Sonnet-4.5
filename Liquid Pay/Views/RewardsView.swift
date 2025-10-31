@@ -60,10 +60,10 @@ struct RewardsView: View {
             coinsRequired: 1500
         )
     ]
-    
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+        VStack(spacing: 16) {
                 header
                 dailyRewardCard
                 gamesRow
@@ -120,9 +120,9 @@ struct RewardsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color.yellow.opacity(0.15))
-        .cornerRadius(12)
+            .padding()
+            .background(Color.yellow.opacity(0.15))
+            .cornerRadius(12)
     }
     
     private var dailyRewardCard: some View {
@@ -154,7 +154,7 @@ struct RewardsView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Mini‑Games").font(.headline)
-                Spacer()
+            Spacer()
                 Text("Entry: \(entryFee) coins • Win: +\(winPrize)").font(.caption).foregroundColor(.secondary)
             }
             ScrollView(.horizontal, showsIndicators: false) {
@@ -162,8 +162,7 @@ struct RewardsView: View {
                     ForEach(games) { g in
                         Button {
                             Task { @MainActor in
-                                await showAdIfNeeded()
-                                activeGame = g
+                                await showAdThen { activeGame = g }
                             }
                         } label: {
                             VStack(alignment: .leading, spacing: 6) {
@@ -189,9 +188,10 @@ struct RewardsView: View {
                     ForEach(brands) { brand in
                         Button {
                             Task { @MainActor in
-                                await showAdIfNeeded()
-                                selectedBrand = brand
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                await showAdThen {
+                                    selectedBrand = brand
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                }
                             }
                         } label: {
                             ZStack(alignment: .bottomLeading) {
@@ -282,9 +282,10 @@ struct RewardsView: View {
     
     // MARK: - Ad Integration
     @MainActor
-    private func showAdIfNeeded() async {
+    private func showAdThen(_ action: @escaping () -> Void) async {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootVC = windowScene.windows.first?.rootViewController else {
+            action()
             return
         }
         // Find the topmost view controller
@@ -292,7 +293,8 @@ struct RewardsView: View {
         while let presented = topVC.presentedViewController {
             topVC = presented
         }
-        _ = AdMobManager.shared.showInterstitialIfAvailable(from: topVC)
+        let shown = AdMobManager.shared.showInterstitialIfAvailable(from: topVC, onDismiss: action)
+        if !shown { action() }
     }
 }
 

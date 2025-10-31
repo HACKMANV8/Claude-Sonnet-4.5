@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import GoogleMobileAds
 import UIKit
 
@@ -6,8 +7,9 @@ import UIKit
 final class AdMobManager: NSObject, ObservableObject {
     static let shared = AdMobManager()
     
-    private var interstitialAd: GADInterstitialAd?
+    private var interstitialAd: InterstitialAd?
     private var adShownThisSession: Bool = false // In-memory, resets on app launch
+    private var onDismiss: (() -> Void)?
     
     // Test Ad Unit ID - Replace with your real ad unit ID in production
     // Test ID: ca-app-pub-3940256099942544/4411468910
@@ -46,16 +48,16 @@ final class AdMobManager: NSObject, ObservableObject {
     }
     
     func loadInterstitial() async {
-        let request = GADRequest()
+        let request = Request()
         do {
-            interstitialAd = try await GADInterstitialAd.load(withAdUnitID: interstitialAdUnitID, request: request)
+            interstitialAd = try await InterstitialAd.load(with: interstitialAdUnitID, request: request)
             interstitialAd?.fullScreenContentDelegate = self
         } catch {
             print("❌ AdMob: Failed to load interstitial ad - \(error.localizedDescription)")
         }
     }
     
-    func showInterstitialIfAvailable(from viewController: UIViewController) -> Bool {
+    func showInterstitialIfAvailable(from viewController: UIViewController, onDismiss: (() -> Void)? = nil) -> Bool {
         // Only show if ad is loaded and hasn't been shown this session
         guard !adShownThisSession, let ad = interstitialAd else {
             return false
@@ -64,23 +66,28 @@ final class AdMobManager: NSObject, ObservableObject {
         // Mark as shown immediately to prevent double-showing
         adShownThisSession = true
         UserDefaults.standard.set(Date(), forKey: "lastAdShownTimestamp")
+        self.onDismiss = onDismiss
         
         // Present ad
-        ad.present(fromRootViewController: viewController)
+        ad.present(from: viewController)
         return true
     }
 }
 
-// MARK: - GADFullScreenContentDelegate
-extension AdMobManager: GADFullScreenContentDelegate {
-    nonisolated func adDidDismissFullScreenContent(_ ad: GADFullScreenPresentingAd) {
+// MARK: - FullScreenContentDelegate
+extension AdMobManager: FullScreenContentDelegate {
+    nonisolated func adDidDismissFullScreenContent(_ ad: FullScreenPresentingAd) {
         Task { @MainActor in
+            // Run any deferred action
+            let completion = self.onDismiss
+            self.onDismiss = nil
+            completion?()
             // Reload ad for next time
             await loadInterstitial()
         }
     }
     
-    nonisolated func ad(_ ad: GADFullScreenPresentingAd, didFailToPresentFullScreenContentWithError error: Error) {
+    nonisolated func ad(_ ad: FullScreenPresentingAd, didFailToPresentFullScreenContentWithError error: Error) {
         print("❌ AdMob: Failed to present ad - \(error.localizedDescription)")
         Task { @MainActor in
             // Try to reload for next time
@@ -88,7 +95,7 @@ extension AdMobManager: GADFullScreenContentDelegate {
         }
     }
     
-    nonisolated func adWillPresentFullScreenContent(_ ad: GADFullScreenPresentingAd) {
+    nonisolated func adWillPresentFullScreenContent(_ ad: FullScreenPresentingAd) {
         print("✅ AdMob: Ad will present")
     }
 }

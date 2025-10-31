@@ -19,12 +19,19 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         UNUserNotificationCenter.current().delegate = self
         
         // Initialize AdMob
-        GADMobileAds.sharedInstance().start(completionHandler: { status in
+        MobileAds.shared.start(completionHandler: { status in
             print("✅ AdMob initialized")
-            Task { @MainActor in
-                await AdMobManager.shared.loadInterstitial()
-            }
         })
+        
+        // Configure test device for AdMob
+        let testDeviceID = "aada182688b00b9efa03807b9989fd14"
+        MobileAds.shared.requestConfiguration.testDeviceIdentifiers = [testDeviceID]
+        print("📱 AdMob: Test device configured - \(testDeviceID)")
+        
+        // Load initial ad after configuration
+        Task { @MainActor in
+            await AdMobManager.shared.loadInterstitial()
+        }
         
         return true
     }

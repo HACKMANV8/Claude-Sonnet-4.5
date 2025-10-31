@@ -215,14 +215,20 @@ struct SettingsView: View {
         .confirmationDialog("Choose Export Format", isPresented: $showExportPicker, titleVisibility: .visible) {
             Button("Export as PDF") {
                 Task { @MainActor in
-                    await showAdIfNeeded()
-                    await exportPaymentsAsPDF()
+                    await showAdThen {
+                        Task { @MainActor in
+                            await exportPaymentsAsPDF()
+                        }
+                    }
                 }
             }
             Button("Export as CSV") {
                 Task { @MainActor in
-                    await showAdIfNeeded()
-                    await exportPaymentsAsCSV()
+                    await showAdThen {
+                        Task { @MainActor in
+                            await exportPaymentsAsCSV()
+                        }
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { }
@@ -367,9 +373,10 @@ struct SettingsView: View {
     
     // MARK: - Ad Integration
     @MainActor
-    private func showAdIfNeeded() async {
+    private func showAdThen(_ action: @escaping () -> Void) async {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootVC = windowScene.windows.first?.rootViewController else {
+            action()
             return
         }
         // Find the topmost view controller
@@ -377,7 +384,8 @@ struct SettingsView: View {
         while let presented = topVC.presentedViewController {
             topVC = presented
         }
-        _ = AdMobManager.shared.showInterstitialIfAvailable(from: topVC)
+        let shown = AdMobManager.shared.showInterstitialIfAvailable(from: topVC, onDismiss: action)
+        if !shown { action() }
     }
 }
 
