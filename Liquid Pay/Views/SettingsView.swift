@@ -296,6 +296,9 @@ struct SettingsView: View {
                 reminders = RemindersService.shared.load()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .remindersUpdated)) { _ in
+            reminders = RemindersService.shared.load()
+        }
         .sheet(isPresented: $showImagePicker) {
             ImagePicker(image: $profileImage)
         }

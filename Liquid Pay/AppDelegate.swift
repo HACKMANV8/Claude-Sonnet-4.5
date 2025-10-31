@@ -80,9 +80,21 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
         if response.notification.request.content.categoryIdentifier == NotificationService.billReminderCategory {
+            let reminderId = info["reminderId"] as? String ?? ""
             let upi = info["upiId"] as? String ?? ""
             let amount = info["amountPaise"] as? Int ?? 0
             let name = info["contactName"] as? String
+            
+            // Delete the reminder after user interacts with notification
+            if !reminderId.isEmpty {
+                DispatchQueue.main.async {
+                    RemindersService.shared.delete(id: reminderId)
+                    print("🗑️ Deleted reminder \(reminderId) after notification interaction")
+                    // Notify SettingsView to refresh reminders list
+                    NotificationCenter.default.post(name: .remindersUpdated, object: nil)
+                }
+            }
+            
             if response.actionIdentifier == NotificationService.payAction || response.actionIdentifier == UNNotificationDefaultActionIdentifier {
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: .openPayWithUPI, object: nil, userInfo: ["upiId": upi, "amountPaise": amount, "contactName": name as Any])

@@ -5,6 +5,7 @@ extension Notification.Name {
     static let paymentCompleted = Notification.Name("LP_PaymentCompleted")
     static let openPayWithUPI = Notification.Name("LP_OpenPayWithUPI")
     static let openReceive = Notification.Name("LP_OpenReceive")
+    static let remindersUpdated = Notification.Name("LP_RemindersUpdated")
 }
 
 struct MainTabView: View {
