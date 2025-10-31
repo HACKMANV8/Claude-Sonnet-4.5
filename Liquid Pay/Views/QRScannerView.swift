@@ -12,6 +12,7 @@ struct QRScannerView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     var onCodeScanned: (String) -> Void
+    var onManualPay: (() -> Void)? = nil
     
     var body: some View {
         ZStack {
@@ -54,7 +55,27 @@ struct QRScannerView: View {
                     .cornerRadius(12)
                     .shadow(radius: 4)
                 }
-                .padding(.bottom, 60)
+                .padding(.bottom, 12)
+
+                // Manual UPI entry below gallery button
+                Button {
+                    let action = onManualPay
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { action?() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 18))
+                        Text("Pay by UPI ID")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(Color.black.opacity(0.35))
+                    .cornerRadius(12)
+                }
+                .padding(.bottom, 48)
             }
             
             // Scanning frame overlay

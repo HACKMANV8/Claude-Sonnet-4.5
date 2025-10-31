@@ -7,6 +7,7 @@ struct HomeView: View {
     @State private var showPaySheet: Bool = false
     @State private var selectedContact: ContactInfo?
     @State private var showContactSearch: Bool = false
+    @State private var showReceivePayment: Bool = false
 
     private func rupees(_ paise: Int) -> String { Currency.formatPaise(paise) }
 
@@ -118,6 +119,15 @@ struct HomeView: View {
             .padding()
         }
         .navigationTitle("Home")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showReceivePayment = true
+                } label: {
+                    Image(systemName: "qrcode")
+                }
+            }
+        }
         .onAppear {
             vm.startListening()
             if contactsService.authorizationStatus == .authorized {
@@ -149,6 +159,9 @@ struct HomeView: View {
                     showPaySheet = true
                 }
             }
+        }
+        .sheet(isPresented: $showReceivePayment) {
+            ReceivePaymentView()
         }
     }
 

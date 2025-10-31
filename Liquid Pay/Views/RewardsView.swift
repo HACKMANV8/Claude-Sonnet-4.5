@@ -10,7 +10,7 @@ struct RewardsView: View {
     @State private var showRedeemSheet: Bool = false
     @State private var dailyRewardNext: Date? = nil
     
-    private var coinValueInInr: String { String(format: "₹%.2f", Double(coinBalance) / 100.0) }
+    private var coinValueInInr: String { String(format: "₹%.2f", Double(coinBalance) / 1000.0) }
     private let entryFee = 25
     private let winPrize = 50
     private let dailyCapRupees = 50
@@ -102,7 +102,7 @@ struct RewardsView: View {
         }
         .sheet(isPresented: $showRedeemSheet) {
             BankRedeemSheet(maxRupeesPerDay: dailyCapRupees, balanceCoins: coinBalance) { rupees in
-                let coins = rupees * 100
+                let coins = rupees * 1000
                 Task { await redeemCoins(coins, note: "Bank redeem (test)") }
             }
         }
@@ -393,7 +393,7 @@ private struct VoucherRedeemSheet: View {
                                     .foregroundColor(.secondary)
                                 
                                 if coinsToSpend >= brand.coinsRequired {
-                                    Text("≈ ₹\(coinsToSpend / 100)")
+                                    Text("≈ ₹\(coinsToSpend / 1000)")
                                         .font(.system(size: 14, weight: .semibold))
                                         .foregroundColor(.accentColor)
                                 }
@@ -558,7 +558,7 @@ private struct BankRedeemSheet: View {
     }
     
     var coinsNeeded: Int {
-        rupeesToRedeem * 100
+        rupeesToRedeem * 1000
     }
     
     var body: some View {

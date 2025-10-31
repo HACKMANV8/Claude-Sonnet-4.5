@@ -74,16 +74,10 @@ struct PayView: View {
         }
         .padding()
         .navigationTitle("Pay")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showReceivePayment = true
-                } label: {
-                    Image(systemName: "qrcode")
-                }
-            }
-        }
+        // Toolbar QR moved to HomeView (trailing)
         .onAppear {
+            // Auto-open scanner when Pay tab is selected
+            showQRScanner = true
             if let uid = Auth.auth().currentUser?.uid {
                 vouchersListener?.remove(); vouchersListener = nil
                 vouchersListener = RewardsService.shared.listenActiveVouchers(uid: uid) { vouchers in
@@ -102,9 +96,14 @@ struct PayView: View {
             Text(errorAlertMessage)
         }
         .fullScreenCover(isPresented: $showQRScanner) {
-            QRScannerView { qrCode in
+            QRScannerView(onCodeScanned: { qrCode in
                 handleScannedQR(qrCode)
-            }
+            }, onManualPay: {
+                // Open manual UPI entry after scanner dismisses
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    navigateToUPIPay = true
+                }
+            })
         }
         .sheet(isPresented: $showReceivePayment) {
             ReceivePaymentView()
