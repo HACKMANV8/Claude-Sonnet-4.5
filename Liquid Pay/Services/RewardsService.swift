@@ -259,6 +259,81 @@ final class RewardsService {
             return nil
         }
     }
+
+    // MARK: - Context Missions (Firestore-backed)
+    func setPendingContextRewardIfAbsent(uid: String, paymentId: String, title: String, reason: String, coins: Int) async {
+        let ref = db.collection("users").document(uid).collection("context_rewards").document(paymentId)
+        do {
+            try await db.runTransaction { tx, errPtr in
+                do {
+                    let snap = try tx.getDocument(ref)
+                    if snap.exists { return nil }
+                    tx.setData([
+                        "status": "pending",
+                        "title": title,
+                        "reason": reason,
+                        "coins": coins,
+                        "createdAt": FieldValue.serverTimestamp()
+                    ], forDocument: ref)
+                } catch {
+                    errPtr?.pointee = error as NSError
+                }
+                return nil
+            }
+        } catch {
+            // no-op for demo; creation is best-effort
+        }
+    }
+
+    func listenToContextReward(uid: String, paymentId: String, onUpdate: @escaping (ContextReward?) -> Void) -> ListenerRegistration {
+        let ref = db.collection("users").document(uid).collection("context_rewards").document(paymentId)
+        return ref.addSnapshotListener { snap, _ in
+            guard let data = snap?.data() else { onUpdate(nil); return }
+            let status = data["status"] as? String ?? ""
+            guard status == "pending" else { onUpdate(nil); return }
+            let title = data["title"] as? String ?? "Bonus"
+            let reason = data["reason"] as? String ?? ""
+            let coins = data["coins"] as? Int ?? 0
+            onUpdate(ContextReward(paymentId: paymentId, title: title, reason: reason, coins: coins, createdAt: Date()))
+        }
+    }
+
+    func claimContextReward(uid: String, paymentId: String) async throws {
+        let contextRef = db.collection("users").document(uid).collection("context_rewards").document(paymentId)
+        _ = try await db.runTransaction { (tx, errorPointer) -> Any? in
+            do {
+                let snap = try tx.getDocument(contextRef)
+                guard snap.exists else { return nil }
+                let status = snap.data()? ["status"] as? String ?? ""
+                guard status == "pending" else { return nil }
+                let coins = snap.data()? ["coins"] as? Int ?? 0
+                let title = snap.data()? ["title"] as? String ?? "Context Reward"
+
+                // Update user balance and ledger
+                let userRef = self.db.collection("users").document(uid)
+                let userSnap = try tx.getDocument(userRef)
+                let current = (userSnap.data()? ["coinBalance"] as? Int) ?? 0
+                tx.setData(["coinBalance": current + coins], forDocument: userRef, merge: true)
+
+                let ledgerRef = userRef.collection("coin_ledger").document("context_\(paymentId)")
+                let ledgerSnap = try tx.getDocument(ledgerRef)
+                if !ledgerSnap.exists {
+                    tx.setData([
+                        "type": "earn",
+                        "amount": coins,
+                        "note": "Context: \(title)",
+                        "createdAt": FieldValue.serverTimestamp()
+                    ], forDocument: ledgerRef)
+                }
+
+                // Mark context reward claimed
+                tx.setData(["status": "claimed", "claimedAt": FieldValue.serverTimestamp()], forDocument: contextRef, merge: true)
+            } catch {
+                errorPointer?.pointee = error as NSError
+            }
+            return nil
+        }
+    }
 }
 
 

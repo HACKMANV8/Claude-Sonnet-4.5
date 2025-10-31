@@ -14,6 +14,7 @@ struct PaymentSuccessView: View {
     @State private var showShareSheet = false
     @State private var pulseAnimation = false
     @State private var pendingReward: ContextReward? = nil
+    @State private var rewardListener: ListenerRegistration? = nil
     @State private var isClaiming: Bool = false
     @State private var showVoucherSheet: Bool = false
     @State private var suggestedBrand: String? = nil
@@ -122,7 +123,7 @@ struct PaymentSuccessView: View {
                     .offset(y: showContent ? 0 : 20)
 
                     // Context Mission card (if any)
-                    if let reward = pendingReward, !UserDefaults.standard.isContextRewardClaimed(paymentId: reward.paymentId) {
+                    if let reward = pendingReward {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
                                 Text(reward.title)
@@ -291,11 +292,12 @@ struct PaymentSuccessView: View {
             ShareSheet(activityItems: [generateShareText()])
         }
         .onAppear {
-            // Load pending reward and ensure it belongs to this payment
-            if let pr = UserDefaults.standard.getPendingContextReward(), pr.paymentId == payment.id {
-                pendingReward = pr
-            } else {
-                pendingReward = nil
+            // Listen to Firestore context reward for this payment
+            if let uid = Auth.auth().currentUser?.uid {
+                rewardListener?.remove(); rewardListener = nil
+                rewardListener = RewardsService.shared.listenToContextReward(uid: uid, paymentId: payment.id) { reward in
+                    self.pendingReward = reward
+                }
             }
             // Infer e‑com brand from payee for voucher nudge
             let rec = (payeeName ?? "").lowercased()
@@ -304,6 +306,7 @@ struct PaymentSuccessView: View {
             else if rec.contains("myntra") { suggestedBrand = "Myntra" }
             else { suggestedBrand = nil }
         }
+        .onDisappear { rewardListener?.remove(); rewardListener = nil }
         .sheet(isPresented: $showVoucherSheet) {
             if let brand = suggestedBrand {
                 QuickVoucherSheet(brand: brand, balanceCoins: nil) { coins in
@@ -341,10 +344,7 @@ extension PaymentSuccessView {
             defer { self.isClaiming = false }
             guard let uid = Auth.auth().currentUser?.uid else { return }
             do {
-                try await RewardsService.shared.awardGameWin(uid: uid, prize: reward.coins, game: "context_mission")
-                UserDefaults.standard.markContextRewardClaimed(paymentId: reward.paymentId)
-                UserDefaults.standard.setPendingContextReward(nil)
-                self.pendingReward = nil
+                try await RewardsService.shared.claimContextReward(uid: uid, paymentId: reward.paymentId)
                 // Celebration
                 self.showConfetti = true
             } catch {

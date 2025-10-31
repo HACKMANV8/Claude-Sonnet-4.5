@@ -131,7 +131,7 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
                 }
             }
             
-            // Context Mission (client-only): evaluate and stash pending reward for success screen
+            // Context Mission (Firestore): evaluate and create pending reward doc
             Task { @MainActor in
                 let offer = ContextRewardsEngine.evaluate(
                     amountPaise: self.currentAmountPaise,
@@ -139,17 +139,8 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
                     pci: nil,
                     streakDays: nil
                 )
-                if let offer = offer, !UserDefaults.standard.isContextRewardClaimed(paymentId: payment_id) {
-                    let reward = ContextReward(
-                        paymentId: payment_id,
-                        title: offer.title,
-                        reason: offer.reason,
-                        coins: max(1, offer.coins),
-                        createdAt: Date()
-                    )
-                    UserDefaults.standard.setPendingContextReward(reward)
-                } else {
-                    UserDefaults.standard.setPendingContextReward(nil)
+                if let offer = offer, let uid = Auth.auth().currentUser?.uid {
+                    await RewardsService.shared.setPendingContextRewardIfAbsent(uid: uid, paymentId: payment_id, title: offer.title, reason: offer.reason, coins: max(1, offer.coins))
                 }
             }
 
