@@ -28,6 +28,11 @@ final class PaymentsViewModel: ObservableObject {
             let mapped: [Payment] = snapshot?.documents.compactMap { doc in
                 let data = doc.data()
                 let ts = data["createdAt"] as? Timestamp
+                var noteStr: String? = data["note"] as? String
+                if noteStr == nil, let notesDict = data["notes"] as? [String: Any] {
+                    let pairs = notesDict.map { "\($0.key): \($0.value)" }.sorted()
+                    noteStr = pairs.joined(separator: ", ")
+                }
                 return Payment(
                     id: doc.documentID,
                     userId: data["userId"] as? String ?? "",
@@ -37,6 +42,7 @@ final class PaymentsViewModel: ObservableObject {
                     razorpayPaymentId: data["razorpayPaymentId"] as? String,
                     orderId: data["orderId"] as? String,
                     recipient: data["recipient"] as? String,
+                    note: noteStr,
                     createdAt: ts?.dateValue()
                 )
             } ?? []

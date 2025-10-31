@@ -33,6 +33,9 @@ struct PaymentReceiptView: View {
                         DetailRow(label: "Bill ID", value: bid)
                     }
                     DetailRow(label: "Amount", value: Currency.formatPaise(payment.amountPaise))
+                    if let note = payment.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        DetailRow(label: "Notes", value: note)
+                    }
                 }
                 .padding()
                 .background(Color(.secondarySystemBackground))
@@ -97,6 +100,9 @@ struct PaymentReceiptView: View {
         }
         if let bid = payment.billId, !bid.isEmpty {
             text += "Bill ID: \(bid)\n"
+        }
+        if let note = payment.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            text += "Notes: \(note)\n"
         }
         text += "\n═══════════════════════\n"
         text += "Thank you for using Liquid Pay!\n"

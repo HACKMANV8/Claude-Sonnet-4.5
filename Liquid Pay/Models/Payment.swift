@@ -9,6 +9,7 @@ struct Payment: Identifiable, Codable {
     let razorpayPaymentId: String?
     let orderId: String?
     let recipient: String?
+    let note: String?
     let createdAt: Date?
 }
 

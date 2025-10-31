@@ -104,6 +104,7 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
                 razorpayPaymentId: payment_id,
                 orderId: self.currentOrderId,
                 recipient: self.currentPayeeName,
+                note: nil,
                 createdAt: Date()
             )
             
