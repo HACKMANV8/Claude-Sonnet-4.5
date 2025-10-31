@@ -29,6 +29,7 @@ struct SettingsView: View {
     // Reminders
     @State private var reminders: [BillReminder] = []
     @State private var showAddReminder: Bool = false
+    @State private var editingReminder: BillReminder? = nil
     
     var body: some View {
         Form {
@@ -173,6 +174,24 @@ struct SettingsView: View {
                             Toggle("", isOn: Binding(get: { r.enabled }, set: { newVal in var m = r; m.enabled = newVal; updateReminder(m) }))
                                 .labelsHidden()
                         }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            editingReminder = r
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                RemindersService.shared.delete(id: r.id)
+                                reminders = RemindersService.shared.load()
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button {
+                                editingReminder = r
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.blue)
+                        }
                     }
                     .onDelete { idx in
                         for i in idx { RemindersService.shared.delete(id: reminders[i].id) }
@@ -280,8 +299,16 @@ struct SettingsView: View {
             ImagePicker(image: $profileImage)
         }
         .sheet(isPresented: $showAddReminder) {
-            ReminderEditorSheet { newReminder in
+            ReminderEditorSheet(editing: nil) { newReminder in
                 if let newReminder = newReminder { RemindersService.shared.upsert(newReminder); reminders = RemindersService.shared.load() }
+                showAddReminder = false
+            }
+            .presentationDetents([.medium])
+        }
+        .sheet(item: $editingReminder) { reminder in
+            ReminderEditorSheet(editing: reminder) { updatedReminder in
+                if let updatedReminder = updatedReminder { RemindersService.shared.upsert(updatedReminder); reminders = RemindersService.shared.load() }
+                editingReminder = nil
             }
             .presentationDetents([.medium])
         }
@@ -391,6 +418,12 @@ struct SettingsView: View {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
     }
+    
+    // MARK: - Reminder Helpers
+    private func updateReminder(_ reminder: BillReminder) {
+        RemindersService.shared.upsert(reminder)
+        reminders = RemindersService.shared.load()
+    }
     private func clearLocalCaches() {
         let defaults = UserDefaults.standard
         // Currency caches
@@ -435,6 +468,7 @@ private struct ShareSheet: UIViewControllerRepresentable {
 
 // MARK: - Reminder Editor
 private struct ReminderEditorSheet: View {
+    let editing: BillReminder?
     var onDone: (BillReminder?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var contactName: String = ""
@@ -467,21 +501,37 @@ private struct ReminderEditorSheet: View {
                     DatePicker("Time", selection: $date, displayedComponents: .hourAndMinute)
                 }
             }
-            .navigationTitle("New Reminder")
+            .navigationTitle(editing == nil ? "New Reminder" : "Edit Reminder")
+            .onAppear {
+                if let existing = editing {
+                    contactName = existing.contactName
+                    upiId = existing.upiId
+                    amount = String(existing.amountPaise / 100)
+                    isCollect = existing.isCollect
+                    weekday = existing.weekday
+                    var comps = DateComponents()
+                    comps.hour = existing.hour
+                    comps.minute = existing.minute
+                    if let d = Calendar.current.date(from: comps) {
+                        date = d
+                    }
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { onDone(nil); dismiss() } }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
                         let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
                         let amtPaise = max(100, (Int(amount) ?? 0) * 100)
-                        let reminder = BillReminder(contactName: contactName.isEmpty ? upiId : contactName,
+                        let reminder = BillReminder(id: editing?.id ?? UUID().uuidString,
+                                                    contactName: contactName.isEmpty ? upiId : contactName,
                                                     upiId: upiId,
                                                     amountPaise: amtPaise,
                                                     isCollect: isCollect,
                                                     weekday: weekday,
                                                     hour: comps.hour ?? 9,
                                                     minute: comps.minute ?? 0,
-                                                    enabled: true)
+                                                    enabled: editing?.enabled ?? true)
                         onDone(reminder)
                         dismiss()
                     }.disabled(upiId.isEmpty || (Int(amount) ?? 0) <= 0)
