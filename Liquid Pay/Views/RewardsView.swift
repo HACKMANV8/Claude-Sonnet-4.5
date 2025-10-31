@@ -5,9 +5,7 @@ struct RewardsView: View {
     @State private var coinBalance: Int = 0
     @State private var isLoading: Bool = true
     @State private var errorMessage: String?
-    @State private var showGame: Bool = false
     @State private var activeGame: GameInfo? = nil
-    @State private var showVoucherSheet: Bool = false
     @State private var selectedBrand: BrandCard? = nil
     @State private var showRedeemSheet: Bool = false
     @State private var dailyRewardNext: Date? = nil
@@ -85,25 +83,21 @@ struct RewardsView: View {
             .padding()
         }
         .navigationTitle("Rewards")
-        .sheet(isPresented: $showGame) {
-            if let g = activeGame {
-                NavigationView {
-                    switch g.type {
-                    case .scratch:
-                        ScratchCardGameView(entryFee: entryFee, winPrize: winPrize, title: g.title) { showGame = false }
-                    case .spin:
-                        SpinWheelGameView(entryFee: entryFee, winPrize: winPrize, title: g.title) { showGame = false }
-                    case .ttt:
-                        TicTacToeGameView(entryFee: entryFee, winPrize: winPrize, title: g.title) { showGame = false }
-                    }
+        .sheet(item: $activeGame) { g in
+            NavigationView {
+                switch g.type {
+                case .scratch:
+                    ScratchCardGameView(entryFee: entryFee, winPrize: winPrize, title: g.title) { activeGame = nil }
+                case .spin:
+                    SpinWheelGameView(entryFee: entryFee, winPrize: winPrize, title: g.title) { activeGame = nil }
+                case .ttt:
+                    TicTacToeGameView(entryFee: entryFee, winPrize: winPrize, title: g.title) { activeGame = nil }
                 }
             }
         }
-        .sheet(isPresented: $showVoucherSheet) {
-            if let brand = selectedBrand {
-                VoucherRedeemSheet(brand: brand, balance: coinBalance) { coinsToSpend in
-                    Task { await redeemCoins(coinsToSpend, note: "Voucher \(brand.name)") }
-                }
+        .sheet(item: $selectedBrand) { brand in
+            VoucherRedeemSheet(brand: brand, balance: coinBalance) { coinsToSpend in
+                Task { await redeemCoins(coinsToSpend, note: "Voucher \(brand.name)") }
             }
         }
         .sheet(isPresented: $showRedeemSheet) {
@@ -167,9 +161,9 @@ struct RewardsView: View {
                 HStack(spacing: 12) {
                     ForEach(games) { g in
                         Button {
-                            activeGame = g
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                showGame = true
+                            Task { @MainActor in
+                                await showAdIfNeeded()
+                                activeGame = g
                             }
                         } label: {
                             VStack(alignment: .leading, spacing: 6) {
@@ -194,10 +188,10 @@ struct RewardsView: View {
                 HStack(spacing: 12) {
                     ForEach(brands) { brand in
                         Button {
-                            selectedBrand = brand
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                showVoucherSheet = true
+                            Task { @MainActor in
+                                await showAdIfNeeded()
+                                selectedBrand = brand
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             }
                         } label: {
                             ZStack(alignment: .bottomLeading) {
@@ -285,6 +279,21 @@ struct RewardsView: View {
         if h > 0 { return "in \(h)h \(m)m" }
         return "in \(m)m"
     }
+    
+    // MARK: - Ad Integration
+    @MainActor
+    private func showAdIfNeeded() async {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootVC = windowScene.windows.first?.rootViewController else {
+            return
+        }
+        // Find the topmost view controller
+        var topVC = rootVC
+        while let presented = topVC.presentedViewController {
+            topVC = presented
+        }
+        _ = AdMobManager.shared.showInterstitialIfAvailable(from: topVC)
+    }
 }
 
 // MARK: - Models & Sheets
@@ -301,38 +310,235 @@ private struct VoucherRedeemSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var coinsText: String = "1000" // default
     @State private var code: String? = nil
+    @FocusState private var isCoinsFieldFocused: Bool
+    
+    var coinsToSpend: Int {
+        max(brand.coinsRequired, Int(coinsText) ?? brand.coinsRequired)
+    }
     
     var body: some View {
-        VStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 2).fill(Color.secondary.opacity(0.4)).frame(width: 44, height: 4).padding(.top, 8)
-            HStack(spacing: 10) {
-                AsyncImage(url: URL(string: brand.logoURL)) { phase in
-                    switch phase {
-                    case .empty: ProgressView()
-                    case .success(let image): image.resizable().scaledToFit()
-                    case .failure: Image(systemName: "giftcard").resizable().scaledToFit()
-                    @unknown default: EmptyView()
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Header Card with Brand
+                    VStack(spacing: 16) {
+                        AsyncImage(url: URL(string: brand.logoURL)) { phase in
+                            switch phase {
+                            case .empty:
+                                ProgressView()
+                                    .tint(.white)
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFit()
+                            case .failure:
+                                Image(systemName: "giftcard")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .foregroundColor(.white)
+                            @unknown default:
+                                EmptyView()
+                            }
+                        }
+                        .frame(width: 64, height: 64)
+                        .padding(.top, 8)
+                        
+                        Text("Redeem \(brand.name) Voucher")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                        
+                        Text("Exchange your Liquid Coins for \(brand.name) voucher")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                    .background(
+                        LinearGradient(
+                            colors: [brand.color, brand.color.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .cornerRadius(20)
+                    
+                    // Coins Input Card
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Enter Coins to Spend")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        HStack(spacing: 12) {
+                            TextField("", text: $coinsText)
+                                .keyboardType(.numberPad)
+                                .font(.system(size: 36, weight: .bold, design: .rounded))
+                                .multilineTextAlignment(.center)
+                                .focused($isCoinsFieldFocused)
+                                .frame(height: 60)
+                                .background(Color(.secondarySystemBackground))
+                                .cornerRadius(16)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(isCoinsFieldFocused ? Color.accentColor : Color.clear, lineWidth: 2)
+                                )
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("coins")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                
+                                if coinsToSpend >= brand.coinsRequired {
+                                    Text("≈ ₹\(coinsToSpend / 100)")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.accentColor)
+                                }
+                            }
+                            .frame(width: 70, alignment: .leading)
+                        }
+                        
+                        // Balance and Requirements
+                        VStack(spacing: 12) {
+                            HStack {
+                                Text("Your Balance")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(balance) coins")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.primary)
+                            }
+                            
+                            Divider()
+                            
+                            HStack {
+                                Text("Minimum Required")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(brand.coinsRequired) coins")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(balance >= brand.coinsRequired ? .green : .orange)
+                            }
+                            
+                            if coinsToSpend > balance {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.orange)
+                                    Text("Insufficient coins. You need \(coinsToSpend - balance) more coins.")
+                                        .font(.subheadline)
+                                        .foregroundColor(.orange)
+                                }
+                                .padding()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.orange.opacity(0.1))
+                                .cornerRadius(12)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.tertiarySystemBackground))
+                        .cornerRadius(16)
+                    }
+                    .padding(20)
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(20)
+                    
+                    // Generated Code Display
+                    if let c = code {
+                        VStack(spacing: 12) {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.title2)
+                                Text("Voucher Generated!")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundColor(.green)
+                            }
+                            
+                            Text("Your Voucher Code")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 4)
+                            
+                            Text(c)
+                                .font(.system(size: 24, weight: .bold, design: .monospaced))
+                                .foregroundColor(.primary)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 16)
+                                .frame(maxWidth: .infinity)
+                                .background(Color(.tertiarySystemBackground))
+                                .cornerRadius(16)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(Color.green.opacity(0.3), lineWidth: 2)
+                                )
+                        }
+                        .padding(20)
+                        .background(Color.green.opacity(0.05))
+                        .cornerRadius(20)
+                    }
+                    
+                    // Action Buttons
+                    VStack(spacing: 12) {
+                        Button {
+                            let coins = max(brand.coinsRequired, Int(coinsText) ?? brand.coinsRequired)
+                            guard coins <= balance else { return }
+                            onRedeem(coins)
+                            code = "\(brand.codePrefix)-\(Int.random(in: 1000...9999))-\(Int.random(in: 1000...9999))"
+                            UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        } label: {
+                            Text("Redeem Now")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 56)
+                                .background(
+                                    LinearGradient(
+                                        colors: coinsToSpend <= balance ? [brand.color, brand.color.opacity(0.8)] : [Color.gray, Color.gray.opacity(0.8)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .cornerRadius(16)
+                                .shadow(color: coinsToSpend <= balance ? brand.color.opacity(0.3) : Color.clear, radius: 8, x: 0, y: 4)
+                        }
+                        .disabled(coinsToSpend > balance || coinsToSpend < brand.coinsRequired)
+                        .opacity(coinsToSpend <= balance && coinsToSpend >= brand.coinsRequired ? 1.0 : 0.6)
+                        
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("Cancel")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 50)
+                                .background(Color(.tertiarySystemBackground))
+                                .cornerRadius(16)
+                        }
+                    }
+                    .padding(.top, 8)
+                }
+                .padding(20)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .font(.title3)
                     }
                 }
-                .frame(width: 28, height: 28)
-                Text("Redeem \(brand.name)").font(.headline)
-                Spacer()
-            }
-            TextField("Coins to spend", text: $coinsText).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-            HStack { Text("Balance: \(balance)").foregroundColor(.secondary); Spacer() }
-            if let c = code { Text("Your code: \(c)").font(.headline).foregroundColor(.green) }
-            HStack {
-                Button("Cancel") { dismiss() }
-                Spacer()
-                Button("Redeem") {
-                    let coins = max(100, Int(coinsText) ?? 0)
-                    onRedeem(coins)
-                    code = "\(brand.codePrefix)-\(Int.random(in: 1000...9999))-\(Int.random(in: 1000...9999))"
-                }.buttonStyle(.borderedProminent)
             }
         }
-        .padding()
-        .onAppear { coinsText = String(brand.coinsRequired) }
+        .onAppear {
+            coinsText = String(brand.coinsRequired)
+        }
     }
 }
 
@@ -343,22 +549,239 @@ private struct BankRedeemSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var rupeesText: String = ""
     @State private var error: String? = nil
+    @FocusState private var isAmountFieldFocused: Bool
+    
+    var rupeesToRedeem: Int {
+        max(1, Int(rupeesText) ?? 0)
+    }
+    
+    var coinsNeeded: Int {
+        rupeesToRedeem * 100
+    }
     
     var body: some View {
-        VStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 2).fill(Color.secondary.opacity(0.4)).frame(width: 44, height: 4).padding(.top, 8)
-            Text("Redeem to Bank (Test)").font(.headline)
-            TextField("Amount (₹)", text: $rupeesText).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-            if let e = error { Text(e).foregroundColor(.red).font(.caption) }
-            HStack { Button("Cancel") { dismiss() }; Spacer(); Button("Redeem") { redeemTap() }.buttonStyle(.borderedProminent) }
-        }.padding()
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Header Card
+                    VStack(spacing: 16) {
+                        Image(systemName: "banknote.fill")
+                            .font(.system(size: 56))
+                            .foregroundColor(.white)
+                            .padding(.top, 8)
+                        
+                        Text("Redeem to Bank Account")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                        
+                        Text("Convert your Liquid Coins to cash")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                        
+                        Text("(Test Mode)")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.2))
+                            .cornerRadius(8)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.blue, Color.blue.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .cornerRadius(20)
+                    
+                    // Amount Input Card
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Enter Amount to Redeem")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        HStack(spacing: 12) {
+                            Text("₹")
+                                .font(.system(size: 36, weight: .bold))
+                                .foregroundColor(.primary)
+                                .frame(width: 30)
+                            
+                            TextField("", text: $rupeesText)
+                                .keyboardType(.numberPad)
+                                .font(.system(size: 36, weight: .bold, design: .rounded))
+                                .multilineTextAlignment(.center)
+                                .focused($isAmountFieldFocused)
+                                .frame(height: 60)
+                                .background(Color(.secondarySystemBackground))
+                                .cornerRadius(16)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(isAmountFieldFocused ? Color.blue : Color.clear, lineWidth: 2)
+                                )
+                        }
+                        
+                        // Balance and Limits
+                        VStack(spacing: 12) {
+                            HStack {
+                                Text("Your Coin Balance")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(balanceCoins) coins")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.primary)
+                            }
+                            
+                            Divider()
+                            
+                            HStack {
+                                Text("Coins Needed")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(coinsNeeded) coins")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(coinsNeeded <= balanceCoins ? .green : .orange)
+                            }
+                            
+                            Divider()
+                            
+                            HStack {
+                                Text("Daily Limit")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("₹\(maxRupeesPerDay)")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.blue)
+                            }
+                            
+                            // Error Messages
+                            if let e = error {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.red)
+                                    Text(e)
+                                        .font(.subheadline)
+                                        .foregroundColor(.red)
+                                }
+                                .padding()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.red.opacity(0.1))
+                                .cornerRadius(12)
+                            } else if rupeesToRedeem > maxRupeesPerDay {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.orange)
+                                    Text("Daily limit exceeded. Maximum ₹\(maxRupeesPerDay) per day.")
+                                        .font(.subheadline)
+                                        .foregroundColor(.orange)
+                                }
+                                .padding()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.orange.opacity(0.1))
+                                .cornerRadius(12)
+                            } else if coinsNeeded > balanceCoins {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.orange)
+                                    Text("Insufficient coins. You need \(coinsNeeded - balanceCoins) more coins.")
+                                        .font(.subheadline)
+                                        .foregroundColor(.orange)
+                                }
+                                .padding()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.orange.opacity(0.1))
+                                .cornerRadius(12)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.tertiarySystemBackground))
+                        .cornerRadius(16)
+                    }
+                    .padding(20)
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(20)
+                    
+                    // Action Buttons
+                    VStack(spacing: 12) {
+                        Button {
+                            redeemTap()
+                        } label: {
+                            Text("Redeem Now")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 56)
+                                .background(
+                                    LinearGradient(
+                                        colors: canRedeem ? [Color.blue, Color.blue.opacity(0.8)] : [Color.gray, Color.gray.opacity(0.8)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .cornerRadius(16)
+                                .shadow(color: canRedeem ? Color.blue.opacity(0.3) : Color.clear, radius: 8, x: 0, y: 4)
+                        }
+                        .disabled(!canRedeem)
+                        .opacity(canRedeem ? 1.0 : 0.6)
+                        
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("Cancel")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 50)
+                                .background(Color(.tertiarySystemBackground))
+                                .cornerRadius(16)
+                        }
+                    }
+                    .padding(.top, 8)
+                }
+                .padding(20)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .font(.title3)
+                    }
+                }
+            }
+        }
     }
+    
+    private var canRedeem: Bool {
+        let rupees = max(1, Int(rupeesText) ?? 0)
+        let needed = rupees * 100
+        return rupees >= 1 && rupees <= maxRupeesPerDay && needed <= balanceCoins
+    }
+    
     private func redeemTap() {
         let rupees = max(1, Int(rupeesText) ?? 0)
-        if rupees > maxRupeesPerDay { error = "Max ₹\(maxRupeesPerDay) per day"; return }
+        if rupees > maxRupeesPerDay {
+            error = "Daily limit exceeded. Maximum ₹\(maxRupeesPerDay) per day."
+            return
+        }
         let needed = rupees * 100
-        if needed > balanceCoins { error = "Insufficient coins"; return }
+        if needed > balanceCoins {
+            error = "Insufficient coins. You need \(needed - balanceCoins) more coins."
+            return
+        }
         onRedeem(rupees)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
         dismiss()
     }
 }

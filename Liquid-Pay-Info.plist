@@ -24,5 +24,9 @@
 	<string>We need camera access to scan QR codes for payments</string>
 	<key>NSContactsUsageDescription</key>
 	<string>We need access to your contacts to make payments easily</string>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-1615735364940908~8282583220</string>
+	<key>GADInterstitialAdUnitID</key>
+	<string>ca-app-pub-1615735364940908/8025779962</string>
 </dict>
 </plist>

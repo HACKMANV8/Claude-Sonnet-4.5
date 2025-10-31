@@ -14,11 +14,22 @@ struct TransactionsView: View {
             let formattedAmount = Currency.formatPaise(payment.amountPaise).lowercased()
             let plainAmount = String(format: "%.2f", Double(payment.amountPaise) / 100.0).lowercased()
 
-            return formattedAmount.contains(query)
+            // Search by amount, status, payment ID, bill ID
+            var matches = formattedAmount.contains(query)
                 || plainAmount.contains(query)
                 || payment.status.lowercased().contains(query)
                 || (payment.razorpayPaymentId?.lowercased().contains(query) ?? false)
                 || (payment.billId?.lowercased().contains(query) ?? false)
+            
+            // Search by recipient/UPI ID and contact name
+            if let recipient = payment.recipient, !recipient.isEmpty {
+                matches = matches || recipient.lowercased().contains(query)
+                // Search by contact name
+                let displayName = getDisplayName(for: recipient).lowercased()
+                matches = matches || displayName.contains(query)
+            }
+            
+            return matches
         }
 
         switch sortOption {
@@ -95,7 +106,7 @@ struct TransactionsView: View {
             if vm.isLoading { ProgressView() }
         }
         .navigationTitle("Transactions")
-        .searchable(text: $searchText, prompt: "Search by amount, status, or ID")
+        .searchable(text: $searchText, prompt: "Search by amount, name, UPI ID, or status")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {

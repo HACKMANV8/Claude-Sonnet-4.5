@@ -14,7 +14,7 @@ struct SpinWheelGameView: View {
     @State private var result: String? = nil
     @State private var winPendingCollect: Bool = false
     @State private var collected: Bool = false
-    @State private var coinRain: Bool = false
+    @State private var confetti: Bool = false
     
     private struct WheelSegment { let coins: Int; let color: Color }
     // Alternate between 50 and 0 coin slices; adjust distribution as desired
@@ -30,36 +30,100 @@ struct SpinWheelGameView: View {
     ] }
     
     var body: some View {
-        VStack(spacing: 16) {
-            Text(title).font(.title2).bold()
-            Text("Entry: \(entryFee) • Win: +\(winPrize)").font(.caption).foregroundColor(.secondary)
-            ZStack {
-                Wheel
-                Triangle().fill(Color.white).frame(width: 14, height: 14).offset(y: -140)
-            }
-            .frame(width: 280, height: 280)
-            
-            if let r = result { Text(r).font(.headline) }
-            if winPendingCollect {
-                Button(collected ? "Collected" : "Collect") {
-                    guard !collected else { return }
-                    coinRain = true
-                    DispatchQueue.main.asyncAfter(deadline: .now()+1.0) { Task { await awardWin() }; collected = true }
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Entry: \(entryFee) • Win: +\(winPrize)")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.9))
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(collected)
-            }
-            
-            HStack {
-                Button("Spin") { Task { await spin() } }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+                .background(
+                    LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                .cornerRadius(20)
+
+                // Wheel card
+                VStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(Color(.secondarySystemBackground))
+                            .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 6)
+                        ZStack {
+                            Wheel
+                            Triangle().fill(Color.white)
+                                .frame(width: 16, height: 16)
+                                .offset(y: -145)
+                                .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
+                        }
+                    }
+                    .frame(width: 300, height: 300)
+
+                    if let r = result {
+                        Text(r)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                    }
+
+                    if winPendingCollect {
+                        Button(collected ? "Collected" : "Collect Reward") {
+                            guard !collected else { return }
+                            confetti = true
+                            DispatchQueue.main.asyncAfter(deadline: .now()+1.0) { Task { await awardWin() }; collected = true }
+                        }
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(
+                            LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(14)
+                        .shadow(color: .green.opacity(0.25), radius: 8, x: 0, y: 4)
+                        .disabled(collected)
+                        .opacity(collected ? 0.7 : 1)
+                    }
+
+                    Button {
+                        Task { await spin() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: spinning ? "timer" : "arrow.2.circlepath")
+                            Text(spinning ? "Spinning..." : "Spin Wheel")
+                        }
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(
+                            LinearGradient(colors: [.purple, .blue], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(14)
+                        .opacity(spinning ? 0.7 : 1)
+                    }
                     .disabled(spinning)
+                }
+                .padding(16)
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(20)
+
                 Button("Close") { dismiss(); onClose() }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(Color(.tertiarySystemBackground))
+                    .cornerRadius(14)
             }
-            .buttonStyle(.borderedProminent)
+            .padding(20)
         }
-        .padding()
         .navigationBarTitleDisplayMode(.inline)
-        .overlay(alignment: .top) { CoinRainView(isActive: $coinRain, duration: 1.2, coinCount: 26) }
+        .overlay(alignment: .top) { GameConfettiView(isActive: $confetti, duration: 1.5, confettiCount: 50) }
     }
     
     private var Wheel: some View {

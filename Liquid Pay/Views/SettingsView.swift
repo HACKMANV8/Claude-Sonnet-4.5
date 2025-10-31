@@ -7,6 +7,9 @@ import UIKit
 
 struct SettingsView: View {
     @AppStorage("isDarkMode") private var isDarkMode: Bool = false
+    @AppStorage("appLockEnabled") private var appLockEnabled: Bool = false
+    @AppStorage("hideSensitiveUI") private var hideSensitiveUI: Bool = false
+    @AppStorage("analyticsOptOut") private var analyticsOptOut: Bool = false
     @State private var shareURL: URL?
     @State private var showShare: Bool = false
     @State private var isExporting: Bool = false
@@ -140,6 +143,16 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
             }
+            Section(header: Text("Privacy & Security")) {
+                NavigationLink(destination: PrivacySecurityDetailsView()) {
+                    Label("Privacy & Security Details", systemImage: "lock.shield")
+                }
+                Button {
+                    openAppSettings()
+                } label: {
+                    Label("Manage Permissions (Camera, Photos, Contacts)", systemImage: "gear")
+                }
+            }
             Section(header: Text("Export")) {
                 if isExporting { ProgressView("Preparing export...") }
                 Button {
@@ -201,10 +214,16 @@ struct SettingsView: View {
         }
         .confirmationDialog("Choose Export Format", isPresented: $showExportPicker, titleVisibility: .visible) {
             Button("Export as PDF") {
-                Task { await exportPaymentsAsPDF() }
+                Task { @MainActor in
+                    await showAdIfNeeded()
+                    await exportPaymentsAsPDF()
+                }
             }
             Button("Export as CSV") {
-                Task { await exportPaymentsAsCSV() }
+                Task { @MainActor in
+                    await showAdIfNeeded()
+                    await exportPaymentsAsCSV()
+                }
             }
             Button("Cancel", role: .cancel) { }
         }
@@ -325,6 +344,41 @@ struct SettingsView: View {
         } catch { }
         isSavingProfile = false
     }
+
+    // MARK: - Privacy & Security Helpers
+    private func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+    private func clearLocalCaches() {
+        let defaults = UserDefaults.standard
+        // Currency caches
+        defaults.removeObject(forKey: "selectedCurrencyPairs")
+        defaults.removeObject(forKey: "cachedCurrencyRates")
+        defaults.removeObject(forKey: "currencyRatesLastUpdate")
+        // Legacy keys if any
+        defaults.removeObject(forKey: "cached_currency_rates")
+        defaults.removeObject(forKey: "cached_currency_timestamp")
+        // UPI prefs
+        for (key, _) in defaults.dictionaryRepresentation() {
+            if key.hasPrefix("upi_pref_") { defaults.removeObject(forKey: key) }
+        }
+    }
+    
+    // MARK: - Ad Integration
+    @MainActor
+    private func showAdIfNeeded() async {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootVC = windowScene.windows.first?.rootViewController else {
+            return
+        }
+        // Find the topmost view controller
+        var topVC = rootVC
+        while let presented = topVC.presentedViewController {
+            topVC = presented
+        }
+        _ = AdMobManager.shared.showInterstitialIfAvailable(from: topVC)
+    }
 }
 
 // MARK: - ShareSheet
@@ -334,6 +388,58 @@ private struct ShareSheet: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
     }
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - Privacy & Security Details
+private struct PrivacySecurityDetailsView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                GroupBox(label: Label("Data We Store", systemImage: "tray.and.arrow.down.fill")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("• Payments: amount, status, timestamps, recipient (if provided)")
+                        Text("• PCI: score and trend computed server‑side; not editable on device")
+                        Text("• Coins & Rewards: coin balance and ledger entries")
+                        Text("• Profile: name, DOB, and optional profile photo")
+                        Text("• No card or sensitive banking details are stored by us")
+                    }
+                    .font(.subheadline)
+                }
+                GroupBox(label: Label("How We Use It", systemImage: "chart.bar.xaxis")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("• Power core features: payments, PCI, rewards, vouchers")
+                        Text("• Improve reliability and fraud detection (server‑side only)")
+                        Text("• Optional anonymized analytics (you can opt out)")
+                    }
+                    .font(.subheadline)
+                }
+                GroupBox(label: Label("Security Practices", systemImage: "lock.shield")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("• Razorpay secure payment sheet; we never see card details")
+                        Text("• PCI updates via verified Razorpay webhooks with signature checks")
+                        Text("• Firestore security rules restrict all data to your account")
+                        Text("• App Lock (Face ID/Touch ID) available from Settings")
+                    }
+                    .font(.subheadline)
+                }
+                GroupBox(label: Label("Your Controls", systemImage: "slider.horizontal.3")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("• Hide sensitive amounts in the app")
+                        Text("• Opt out of anonymized analytics")
+                        Text("• Clear local caches anytime")
+                        Text("• Manage camera/photos/contacts permissions in iOS Settings")
+                    }
+                    .font(.subheadline)
+                }
+                GroupBox(label: Label("Questions?", systemImage: "questionmark.circle")) {
+                    Text("Email support@liquidpay.app and include your registered phone number.")
+                        .font(.subheadline)
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Privacy & Security")
+    }
 }
 
 // MARK: - ReferralInputSheet

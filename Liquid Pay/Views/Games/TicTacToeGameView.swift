@@ -14,47 +14,98 @@ struct TicTacToeGameView: View {
     @State private var resultText: String? = nil
     @State private var winPendingCollect: Bool = false
     @State private var collected: Bool = false
-    @State private var coinRain: Bool = false
+    @State private var confetti: Bool = false
     
     var body: some View {
-        VStack(spacing: 16) {
-            Text(title).font(.title2).bold()
-            Text("Entry: \(entryFee) • Win: +\(winPrize)").font(.caption).foregroundColor(.secondary)
-            GridView
-            if let r = resultText { Text(r).font(.headline) }
-            if winPendingCollect {
-                Button(collected ? "Collected" : "Collect") {
-                    guard !collected else { return }
-                    coinRain = true
-                    DispatchQueue.main.asyncAfter(deadline: .now()+1.0) { Task { await awardWin() }; collected = true }
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("You vs Computer • Entry: \(entryFee) • Win: +\(winPrize)")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.9))
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(collected)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+                .background(
+                    LinearGradient(colors: [.teal, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                .cornerRadius(20)
+
+                // Board card
+                VStack(spacing: 16) {
+                    GridView
+                        .padding(8)
+
+                    if let r = resultText {
+                        Text(r)
+                            .font(.headline)
+                            .foregroundColor(r.contains("win") ? .green : (r == "Draw" ? .secondary : .orange))
+                    } else {
+                        Text(isUserTurn ? "Your turn" : "Computer thinking...")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    if winPendingCollect {
+                        Button(collected ? "Collected" : "Collect Reward") {
+                            guard !collected else { return }
+                            confetti = true
+                            DispatchQueue.main.asyncAfter(deadline: .now()+1.0) { Task { await awardWin() }; collected = true }
+                        }
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(
+                            LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(14)
+                        .shadow(color: .green.opacity(0.25), radius: 8, x: 0, y: 4)
+                        .disabled(collected)
+                        .opacity(collected ? 0.7 : 1)
+                    }
+
+                    Button("Close") { dismiss(); onClose() }
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Color(.tertiarySystemBackground))
+                        .cornerRadius(14)
+                }
+                .padding(16)
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(20)
             }
-            Button("Close") { dismiss(); onClose() }
-                .buttonStyle(.bordered)
+            .padding(20)
         }
-        .padding()
         .navigationBarTitleDisplayMode(.inline)
         .task { await chargeEntryIfNeeded() }
-        .overlay(alignment: .top) { CoinRainView(isActive: $coinRain, duration: 1.2, coinCount: 26) }
+        .overlay(alignment: .top) { GameConfettiView(isActive: $confetti, duration: 1.5, confettiCount: 50) }
     }
     
     private var GridView: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             ForEach(0..<3) { row in
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     ForEach(0..<3) { col in
                         let idx = row*3+col
                         Button {
                             tapCell(idx)
                         } label: {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemBackground))
-                                Text(board[idx]).font(.system(size: 40, weight: .bold))
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color(.secondarySystemBackground))
+                                    .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 2)
+                                Text(board[idx])
+                                    .font(.system(size: 42, weight: .bold))
                             }
                         }
-                        .frame(width: 90, height: 90)
+                        .frame(width: 100, height: 100)
                         .disabled(board[idx] != "" || resultText != nil || !isUserTurn)
                     }
                 }

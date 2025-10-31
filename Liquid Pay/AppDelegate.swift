@@ -2,6 +2,7 @@ import UIKit
 import FirebaseCore
 import FirebaseAuth
 import UserNotifications
+import GoogleMobileAds
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
@@ -16,6 +17,14 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         
         // Set notification delegate to handle foreground notifications
         UNUserNotificationCenter.current().delegate = self
+        
+        // Initialize AdMob
+        GADMobileAds.sharedInstance().start(completionHandler: { status in
+            print("✅ AdMob initialized")
+            Task { @MainActor in
+                await AdMobManager.shared.loadInterstitial()
+            }
+        })
         
         return true
     }

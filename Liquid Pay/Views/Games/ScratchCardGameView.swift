@@ -11,47 +11,96 @@ struct ScratchCardGameView: View {
     @State private var revealed: Bool = false
     @State private var win: Bool = Bool.random()
     @State private var charged: Bool = false
-    @State private var coinRain: Bool = false
+    @State private var confetti: Bool = false
     @State private var collected: Bool = false
     
     var body: some View {
-        VStack(spacing: 16) {
-            Text(title).font(.title2).bold()
-            Text("Entry: \(entryFee) • Win: +\(winPrize)").font(.caption).foregroundColor(.secondary)
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(win ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
-                    .overlay(Text(win ? "+\(winPrize)" : "Try again").font(.system(size: 44, weight: .bold)).foregroundColor(win ? .green : .red))
-                if !revealed {
-                    ScratchOverlay(revealed: $revealed)
-                        .onAppear { Task { await chargeEntryIfNeeded() } }
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Entry: \(entryFee) • Win: +\(winPrize)")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.9))
                 }
-            }
-            .frame(height: 220)
-            .padding()
-            
-            if revealed {
-                if win {
-                    Text(collected ? "Collected" : "You win +\(winPrize) coins").font(.headline)
-                    Button(collected ? "Collected" : "Collect") {
-                        guard !collected else { return }
-                        coinRain = true
-                        DispatchQueue.main.asyncAfter(deadline: .now()+1.0) {
-                            Task { await awardWin() }
-                            collected = true
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+                .background(
+                    LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                .cornerRadius(20)
+
+                // Scratch card area
+                VStack(alignment: .center, spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(Color(.secondarySystemBackground))
+                            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 6)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(win ? Color.green.opacity(0.12) : Color.red.opacity(0.12))
+                                .overlay(
+                                    Text(win ? "+\(winPrize)" : "Try again")
+                                        .font(.system(size: 48, weight: .bold))
+                                        .foregroundColor(win ? .green : .red)
+                                )
+                                .padding(16)
+                            if !revealed {
+                                ScratchOverlay(revealed: $revealed)
+                                    .onAppear { Task { await chargeEntryIfNeeded() } }
+                                    .padding(16)
+                            }
                         }
+                        .padding(8)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(collected)
-                } else { Text("Better luck next time").font(.headline) }
-            } else {
-                Text("Scratch to reveal").foregroundColor(.secondary)
+                    .frame(height: 260)
+
+                    Text(revealed ? (win ? "You won +\(winPrize) coins" : "Better luck next time") : "Scratch to reveal your prize")
+                        .font(.headline)
+                        .foregroundColor(revealed ? (win ? .green : .red) : .secondary)
+                        .padding(.top, 4)
+
+                    if revealed && win {
+                        Button(collected ? "Collected" : "Collect Reward") {
+                            guard !collected else { return }
+                            confetti = true
+                            DispatchQueue.main.asyncAfter(deadline: .now()+1.0) {
+                                Task { await awardWin() }
+                                collected = true
+                            }
+                        }
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(
+                            LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(14)
+                        .shadow(color: .green.opacity(0.25), radius: 8, x: 0, y: 4)
+                        .disabled(collected)
+                        .opacity(collected ? 0.7 : 1)
+                    }
+                }
+                .padding(16)
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(20)
+
+                Button("Close") { dismiss(); onClose() }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(Color(.tertiarySystemBackground))
+                    .cornerRadius(14)
             }
-            Button("Close") { dismiss(); onClose() }.buttonStyle(.bordered)
+            .padding(20)
         }
-        .padding()
         .navigationBarTitleDisplayMode(.inline)
-        .overlay(alignment: .top) { CoinRainView(isActive: $coinRain, duration: 1.2, coinCount: 26) }
+        .overlay(alignment: .top) { GameConfettiView(isActive: $confetti, duration: 1.5, confettiCount: 50) }
     }
     
     private func chargeEntryIfNeeded() async {

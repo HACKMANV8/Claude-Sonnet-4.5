@@ -3,6 +3,7 @@ platform :ios, '16.0'
 target 'Liquid Pay' do
   use_frameworks!
   pod 'razorpay-pod', '~> 1.4.6'
+  pod 'Google-Mobile-Ads-SDK'
 end
 
 post_install do |installer|
