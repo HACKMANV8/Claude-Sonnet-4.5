@@ -86,11 +86,11 @@ final class RewardsService {
     }
 
     func awardCoinsForPayment(uid: String, paymentId: String, amountPaise: Int) async throws {
-        let base = max(0, amountPaise) // 10 coins per paise (1000 coins = ₹1)
+        let base = max(0, amountPaise) // 1 coin per paise (100 coins = ₹1 earning)
         // Weekend 2x (client optimistic; server is source of truth)
         let weekday = Calendar.current.component(.weekday, from: Date()) // 1=Sun ... 7=Sat
         let isWeekend = (weekday == 1 || weekday == 7)
-        let coins = base * 10 * (isWeekend ? 2 : 1)
+        let coins = base * (isWeekend ? 2 : 1)
         guard coins > 0 else { return }
         _ = try await db.runTransaction { (tx, errorPointer) -> Any? in
             let userRef = self.db.collection("users").document(uid)

@@ -89,10 +89,10 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
             
             self.lastResultMessage = "Payment success: \(payment_id)"
             
-            // Calculate coins earned (1000 coins = ₹1 => 10 coins per paise)
+            // Calculate coins earned preview (100 coins = ₹1 => 1 coin per paise)
             let weekday = Calendar.current.component(.weekday, from: Date())
             let isWeekend = (weekday == 1 || weekday == 7)
-            let coins = self.currentAmountPaise * 10 * (isWeekend ? 2 : 1)
+            let coins = self.currentAmountPaise * (isWeekend ? 2 : 1)
             
             // Create payment object for success screen
             let payment = Payment(
