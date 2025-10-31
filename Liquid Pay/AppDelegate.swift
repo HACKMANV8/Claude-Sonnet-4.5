@@ -17,6 +17,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         
         // Set notification delegate to handle foreground notifications
         UNUserNotificationCenter.current().delegate = self
+        NotificationService.shared.registerBillReminderCategory()
         
         // Initialize AdMob
         MobileAds.shared.start(completionHandler: { status in
@@ -77,7 +78,21 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        // Handle notification tap if needed
+        let info = response.notification.request.content.userInfo
+        if response.notification.request.content.categoryIdentifier == NotificationService.billReminderCategory {
+            let upi = info["upiId"] as? String ?? ""
+            let amount = info["amountPaise"] as? Int ?? 0
+            let name = info["contactName"] as? String
+            if response.actionIdentifier == NotificationService.payAction || response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .openPayWithUPI, object: nil, userInfo: ["upiId": upi, "amountPaise": amount, "contactName": name as Any])
+                }
+            } else if response.actionIdentifier == NotificationService.collectAction {
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .openReceive, object: nil)
+                }
+            }
+        }
         completionHandler()
     }
 }

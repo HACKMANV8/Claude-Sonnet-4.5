@@ -3,6 +3,9 @@ import UserNotifications
 
 final class NotificationService {
     static let shared = NotificationService()
+    static let billReminderCategory = "BILL_REMINDER"
+    static let payAction = "PAY_NOW"
+    static let collectAction = "COLLECT_NOW"
     
     func requestPermission() async -> Bool {
         do {
@@ -33,6 +36,13 @@ final class NotificationService {
     
     func clearBadge() {
         UNUserNotificationCenter.current().setBadgeCount(0)
+    }
+
+    func registerBillReminderCategory() {
+        let pay = UNNotificationAction(identifier: Self.payAction, title: "Pay Now", options: [.foreground])
+        let collect = UNNotificationAction(identifier: Self.collectAction, title: "Collect", options: [.foreground])
+        let cat = UNNotificationCategory(identifier: Self.billReminderCategory, actions: [pay, collect], intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([cat])
     }
 }
 

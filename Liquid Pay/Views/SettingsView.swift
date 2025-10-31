@@ -26,6 +26,9 @@ struct SettingsView: View {
     @State private var showImagePicker: Bool = false
     @State private var isSavingProfile: Bool = false
     @State private var isEditingProfile: Bool = false
+    // Reminders
+    @State private var reminders: [BillReminder] = []
+    @State private var showAddReminder: Bool = false
     
     var body: some View {
         Form {
@@ -153,6 +156,31 @@ struct SettingsView: View {
                     Label("Manage Permissions (Camera, Photos, Contacts)", systemImage: "gear")
                 }
             }
+            Section(header: Text("Bill Reminders")) {
+                if reminders.isEmpty {
+                    Text("No reminders yet").foregroundColor(.secondary)
+                } else {
+                    ForEach(reminders) { r in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(r.isCollect ? "Collect from \(r.contactName)" : "Pay \(r.contactName)")
+                                    .font(.headline)
+                                Text("\(Currency.formatPaise(r.amountPaise)) • \(weekdayName(r.weekday)) at \(String(format: "%02d:%02d", r.hour, r.minute))")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(get: { r.enabled }, set: { newVal in var m = r; m.enabled = newVal; updateReminder(m) }))
+                                .labelsHidden()
+                        }
+                    }
+                    .onDelete { idx in
+                        for i in idx { RemindersService.shared.delete(id: reminders[i].id) }
+                        reminders.remove(atOffsets: idx)
+                    }
+                }
+                Button { showAddReminder = true } label: { Label("Add Reminder", systemImage: "plus.circle") }
+            }
             Section(header: Text("Export")) {
                 if isExporting { ProgressView("Preparing export...") }
                 Button {
@@ -245,10 +273,17 @@ struct SettingsView: View {
                     referralMessage = "You've already used referral code: \(usedCode)"
                 }
                 await loadProfile()
+                reminders = RemindersService.shared.load()
             }
         }
         .sheet(isPresented: $showImagePicker) {
             ImagePicker(image: $profileImage)
+        }
+        .sheet(isPresented: $showAddReminder) {
+            ReminderEditorSheet { newReminder in
+                if let newReminder = newReminder { RemindersService.shared.upsert(newReminder); reminders = RemindersService.shared.load() }
+            }
+            .presentationDetents([.medium])
         }
     }
 
@@ -396,6 +431,71 @@ private struct ShareSheet: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
     }
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - Reminder Editor
+private struct ReminderEditorSheet: View {
+    var onDone: (BillReminder?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var contactName: String = ""
+    @State private var upiId: String = ""
+    @State private var amount: String = ""
+    @State private var isCollect: Bool = false
+    @State private var date: Date = Date()
+    @State private var weekday: Int = Calendar.current.component(.weekday, from: Date())
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Party")) {
+                    TextField("Contact name", text: $contactName)
+                    TextField("UPI ID (name@bank)", text: $upiId)
+                        .autocapitalization(.none)
+                        .textContentType(.username)
+                }
+                Section(header: Text("Amount & Type")) {
+                    TextField("Amount (₹)", text: $amount).keyboardType(.numberPad)
+                    Picker("Type", selection: $isCollect) {
+                        Text("Pay").tag(false)
+                        Text("Collect").tag(true)
+                    }.pickerStyle(.segmented)
+                }
+                Section(header: Text("Schedule")) {
+                    Picker("Day", selection: $weekday) {
+                        ForEach(1...7, id: \.self) { i in Text(weekdayName(i)).tag(i) }
+                    }
+                    DatePicker("Time", selection: $date, displayedComponents: .hourAndMinute)
+                }
+            }
+            .navigationTitle("New Reminder")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { onDone(nil); dismiss() } }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
+                        let amtPaise = max(100, (Int(amount) ?? 0) * 100)
+                        let reminder = BillReminder(contactName: contactName.isEmpty ? upiId : contactName,
+                                                    upiId: upiId,
+                                                    amountPaise: amtPaise,
+                                                    isCollect: isCollect,
+                                                    weekday: weekday,
+                                                    hour: comps.hour ?? 9,
+                                                    minute: comps.minute ?? 0,
+                                                    enabled: true)
+                        onDone(reminder)
+                        dismiss()
+                    }.disabled(upiId.isEmpty || (Int(amount) ?? 0) <= 0)
+                }
+            }
+        }
+    }
+}
+
+private func weekdayName(_ w: Int) -> String {
+    // Apple: 1=Sun, 2=Mon ... 7=Sat
+    let names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
+    let idx = max(1, min(7, w)) - 1
+    return names[idx]
 }
 
 // MARK: - Privacy & Security Details
