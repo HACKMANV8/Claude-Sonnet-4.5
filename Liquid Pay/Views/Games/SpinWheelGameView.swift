@@ -123,7 +123,7 @@ struct SpinWheelGameView: View {
             .padding(20)
         }
         .navigationBarTitleDisplayMode(.inline)
-        .overlay(alignment: .top) { GameConfettiView(isActive: $confetti, duration: 1.5, confettiCount: 50) }
+        .overlay(alignment: .top) { if confetti { ConfettiView().allowsHitTesting(false) } }
     }
     
     private var Wheel: some View {
