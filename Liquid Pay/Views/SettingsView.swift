@@ -2,6 +2,8 @@ import SwiftUI
 import FirebaseAuth
 import FirebaseFirestore
 import PDFKit
+import PhotosUI
+import UIKit
 
 struct SettingsView: View {
     @AppStorage("isDarkMode") private var isDarkMode: Bool = false
@@ -13,19 +15,92 @@ struct SettingsView: View {
     @State private var showReferralInput: Bool = false
     @State private var referralInputCode: String = ""
     @State private var referralMessage: String?
+    @State private var showExportPicker: Bool = false
+    // Profile state
+    @State private var profileName: String = ""
+    @State private var profileDOB: Date = Date()
+    @State private var profileImage: UIImage?
+    @State private var showImagePicker: Bool = false
+    @State private var isSavingProfile: Bool = false
+    @State private var isEditingProfile: Bool = false
     
     var body: some View {
         Form {
+            // Profile
+            Section(header: Text("Profile")) {
+                if !isEditingProfile {
+                    HStack(spacing: 16) {
+                        ZStack {
+                            if let img = profileImage {
+                                Image(uiImage: img)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 72, height: 72)
+                                    .clipShape(Circle())
+                            } else {
+                                Circle().fill(Color(.secondarySystemBackground)).frame(width: 72, height: 72)
+                                    .overlay(
+                                        Image(systemName: "person.fill")
+                                            .font(.system(size: 28))
+                                            .foregroundColor(.secondary)
+                                    )
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(profileName.isEmpty ? "Your Name" : profileName)
+                                .font(.headline)
+                            Text(profileDOB.formatted(date: .abbreviated, time: .omitted))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button("Edit") { isEditingProfile = true }
+                            .buttonStyle(.bordered)
+                    }
+                    .padding(.vertical, 4)
+                } else {
+                    HStack(spacing: 16) {
+                        ZStack {
+                            if let img = profileImage {
+                                Image(uiImage: img)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 72, height: 72)
+                                    .clipShape(Circle())
+                            } else {
+                                Circle().fill(Color(.secondarySystemBackground)).frame(width: 72, height: 72)
+                                    .overlay(
+                                        Image(systemName: "person.fill")
+                                            .font(.system(size: 28))
+                                            .foregroundColor(.secondary)
+                                    )
+                            }
+                        }
+                        Button { showImagePicker = true } label: { Text("Change Photo") }
+                    }
+                    TextField("Your Name", text: $profileName)
+                        .textContentType(.name)
+                    DatePicker("Date of Birth", selection: $profileDOB, displayedComponents: .date)
+                    HStack {
+                        Button("Cancel") { isEditingProfile = false }
+                        Spacer()
+                        Button {
+                            Task {
+                                await saveProfile()
+                                isEditingProfile = false
+                            }
+                        } label: {
+                            if isSavingProfile { ProgressView() } else { Text("Save") }
+                        }
+                        .disabled(isSavingProfile)
+                    }
+                }
+            }
             Section(header: Text("Account")) {
                 HStack {
                     Text("Phone")
                     Spacer()
                     Text(Auth.auth().currentUser?.phoneNumber ?? "—").foregroundColor(.secondary)
-                }
-                Button(role: .destructive) {
-                    try? Auth.auth().signOut()
-                } label: {
-                    Text("Log Out")
                 }
             }
             Section(header: Text("Refer & Earn")) {
@@ -68,11 +143,27 @@ struct SettingsView: View {
             Section(header: Text("Export")) {
                 if isExporting { ProgressView("Preparing export...") }
                 Button {
-                    Task { await exportPaymentsAsCSV() }
-                } label: { Text("Export Payments (CSV)") }
-                Button {
-                    Task { await exportPaymentsAsPDF() }
-                } label: { Text("Export Payments (PDF)") }
+                    showExportPicker = true
+                } label: {
+                    Label("Export Payments", systemImage: "square.and.arrow.up")
+                }
+            }
+            // Logout at bottom
+            Section {
+                HStack { Spacer()
+                    Button {
+                        try? Auth.auth().signOut()
+                    } label: {
+                        Text("Log Out")
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 28)
+                            .padding(.vertical, 12)
+                            .background(Capsule().fill(Color.red))
+                    }
+                    Spacer() }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
             }
         }
         .navigationTitle("Settings")
@@ -106,7 +197,16 @@ struct SettingsView: View {
                 }
                 showReferralInput = false
             })
-            .presentationDetents([.height(200)])
+            .presentationDetents([.medium])
+        }
+        .confirmationDialog("Choose Export Format", isPresented: $showExportPicker, titleVisibility: .visible) {
+            Button("Export as PDF") {
+                Task { await exportPaymentsAsPDF() }
+            }
+            Button("Export as CSV") {
+                Task { await exportPaymentsAsCSV() }
+            }
+            Button("Cancel", role: .cancel) { }
         }
         .onAppear {
             Task {
@@ -119,7 +219,11 @@ struct SettingsView: View {
                 if let usedCode = userDoc?.data()?["usedReferralCode"] as? String {
                     referralMessage = "You've already used referral code: \(usedCode)"
                 }
+                await loadProfile()
             }
+        }
+        .sheet(isPresented: $showImagePicker) {
+            ImagePicker(image: $profileImage)
         }
     }
 
@@ -193,6 +297,34 @@ struct SettingsView: View {
         ctx.textPosition = point
         CTLineDraw(line, ctx)
     }
+    
+    // MARK: - Profile Helpers
+    private func loadProfile() async {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        let doc = try? await Firestore.firestore().collection("users").document(uid).getDocument()
+        let data = doc?.data() ?? [:]
+        if let name = data["name"] as? String { profileName = name }
+        if let ts = data["dob"] as? Timestamp { profileDOB = ts.dateValue() }
+        if let base64 = data["profileImageBase64"] as? String, let imgData = Data(base64Encoded: base64), let img = UIImage(data: imgData) {
+            profileImage = img
+        }
+    }
+
+    private func saveProfile() async {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        isSavingProfile = true
+        var update: [String: Any] = [
+            "name": profileName,
+            "dob": Timestamp(date: profileDOB)
+        ]
+        if let img = profileImage, let data = img.jpegData(compressionQuality: 0.6) {
+            update["profileImageBase64"] = data.base64EncodedString()
+        }
+        do {
+            try await Firestore.firestore().collection("users").document(uid).setData(update, merge: true)
+        } catch { }
+        isSavingProfile = false
+    }
 }
 
 // MARK: - ShareSheet
@@ -228,6 +360,34 @@ private struct ReferralInputSheet: View {
             }
         }
         .padding()
+    }
+}
+
+// Simple PHPicker-based image picker
+private struct ImagePicker: UIViewControllerRepresentable {
+    @Binding var image: UIImage?
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration(photoLibrary: .shared())
+        config.filter = .images
+        config.selectionLimit = 1
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = context.coordinator
+        return picker
+    }
+    func updateUIViewController(_ controller: PHPickerViewController, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        let parent: ImagePicker
+        init(_ parent: ImagePicker) { self.parent = parent }
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            picker.dismiss(animated: true)
+            guard let provider = results.first?.itemProvider, provider.canLoadObject(ofClass: UIImage.self) else { return }
+            provider.loadObject(ofClass: UIImage.self) { object, _ in
+                if let img = object as? UIImage {
+                    DispatchQueue.main.async { self.parent.image = img }
+                }
+            }
+        }
     }
 }
 

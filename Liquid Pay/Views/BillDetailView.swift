@@ -37,6 +37,17 @@ struct BillDetailView: View {
         }
         .padding()
         .navigationTitle("Bill")
+        .fullScreenCover(isPresented: $payVM.showSuccessScreen) {
+            if let payment = payVM.successPayment {
+                NavigationView {
+                    PaymentSuccessView(
+                        payment: payment,
+                        payeeName: payVM.successPayeeName,
+                        coinsEarned: payVM.successCoinsEarned
+                    )
+                }
+            }
+        }
     }
 }
 

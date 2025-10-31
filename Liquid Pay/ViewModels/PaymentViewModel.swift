@@ -7,13 +7,19 @@ import FirebaseAuth
 @MainActor
 final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentCompletionProtocolWithData {
     @Published var lastResultMessage: String?
+    @Published var showSuccessScreen: Bool = false
+    @Published var successPayment: Payment?
+    @Published var successPayeeName: String?
+    @Published var successCoinsEarned: Int = 0
+    
     private var razorpay: RazorpayCheckout?
     private var currentBillId: String?
     private var currentAmountPaise: Int = 0
     private var currentOrderId: String?
     private var currentKeyId: String?
+    private var currentPayeeName: String?
 
-    func startPayment(amountPaise: Int, billId: String, notes: [String: String]? = nil) async {
+    func startPayment(amountPaise: Int, billId: String, notes: [String: String]? = nil, payeeName: String? = nil) async {
         do {
             let order = try await CloudFunctionsService.createOrder(amountPaise: amountPaise, billId: billId, notes: notes)
             let checkout = RazorpayCheckout.initWithKey(order.keyId, andDelegateWithData: self)
@@ -22,6 +28,7 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
             self.currentAmountPaise = amountPaise
             self.currentOrderId = order.orderId
             self.currentKeyId = order.keyId
+            self.currentPayeeName = payeeName
 
             var options: [String: Any] = [
                 "amount": order.amount,
@@ -63,17 +70,43 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
 
     nonisolated func onPaymentSuccess(_ payment_id: String, andData data: [AnyHashable : Any]?) {
         DispatchQueue.main.async { [weak self] in
-            self?.lastResultMessage = "Payment success: \(payment_id)"
-            Task { await self?.record(status: "success", paymentId: payment_id) }
+            guard let self = self else { return }
+            
+            self.lastResultMessage = "Payment success: \(payment_id)"
+            
+            // Calculate coins earned
+            let weekday = Calendar.current.component(.weekday, from: Date())
+            let isWeekend = (weekday == 1 || weekday == 7)
+            let coins = self.currentAmountPaise * (isWeekend ? 2 : 1)
+            
+            // Create payment object for success screen
+            let payment = Payment(
+                id: payment_id,
+                userId: Auth.auth().currentUser?.uid ?? "",
+                billId: self.currentBillId,
+                amountPaise: self.currentAmountPaise,
+                status: "success",
+                razorpayPaymentId: payment_id,
+                orderId: self.currentOrderId,
+                recipient: self.currentPayeeName,
+                createdAt: Date()
+            )
+            
+            // Set success screen data
+            self.successPayment = payment
+            self.successPayeeName = self.currentPayeeName
+            self.successCoinsEarned = coins
+            self.showSuccessScreen = true
+            
+            // Record payment
+            Task { await self.record(status: "success", paymentId: payment_id) }
+            
             // Optimistically award coins (server webhook also awards idempotently)
             Task { [weak self] in
                 guard let self = self, let uid = Auth.auth().currentUser?.uid else { return }
                 try? await RewardsService.shared.awardCoinsForPayment(uid: uid, paymentId: payment_id, amountPaise: self.currentAmountPaise)
                 
-                // Calculate coins earned and send notification
-                let weekday = Calendar.current.component(.weekday, from: Date())
-                let isWeekend = (weekday == 1 || weekday == 7)
-                let coins = self.currentAmountPaise * (isWeekend ? 2 : 1)
+                // Send notification
                 NotificationService.shared.sendPaymentSuccessNotification(amount: self.currentAmountPaise, coinsEarned: coins)
             }
         }
@@ -91,7 +124,7 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
     // MARK: - Persist
     private func record(status: String, paymentId: String?) async {
         guard let uid = Auth.auth().currentUser?.uid else { return }
-        try? await PaymentsService.shared.recordPayment(userId: uid, billId: currentBillId, amountPaise: currentAmountPaise, status: status, razorpayPaymentId: paymentId, orderId: currentOrderId)
+        try? await PaymentsService.shared.recordPayment(userId: uid, billId: currentBillId, amountPaise: currentAmountPaise, status: status, razorpayPaymentId: paymentId, orderId: currentOrderId, recipient: currentPayeeName)
     }
 }
 

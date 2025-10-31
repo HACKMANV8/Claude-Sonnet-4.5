@@ -5,7 +5,7 @@ final class PaymentsService {
     static let shared = PaymentsService()
     private let db = Firestore.firestore()
 
-    func recordPayment(userId: String, billId: String?, amountPaise: Int, status: String, razorpayPaymentId: String?, orderId: String?) async throws {
+    func recordPayment(userId: String, billId: String?, amountPaise: Int, status: String, razorpayPaymentId: String?, orderId: String?, recipient: String?) async throws {
         let data: [String: Any] = [
             "userId": userId,
             "billId": billId as Any,
@@ -13,6 +13,7 @@ final class PaymentsService {
             "status": status,
             "razorpayPaymentId": razorpayPaymentId as Any,
             "orderId": orderId as Any,
+            "recipient": recipient as Any,
             "createdAt": FieldValue.serverTimestamp()
         ]
         if let paymentId = razorpayPaymentId, !paymentId.isEmpty {

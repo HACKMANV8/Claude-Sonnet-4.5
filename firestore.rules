@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Payments collection - users can only read/write their own payments
+    match /payments/{paymentId} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+    }
+    
+    // Bills collection - users can only access their own bills
+    match /bills/{billId} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+    }
+    
+    // Users collection - users can only access their own user document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Coin ledger - subcollection under users
+      match /coin_ledger/{entryId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // Vouchers - subcollection under users
+      match /vouchers/{voucherId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Referrals collection - users can read their own referrals
+    match /referrals/{referralId} {
+      allow read: if request.auth != null && 
+        (request.auth.uid == resource.data.referrerUserId || 
+         request.auth.uid == resource.data.referredUserId);
+      allow create: if request.auth != null;
+    }
+  }
+}
+

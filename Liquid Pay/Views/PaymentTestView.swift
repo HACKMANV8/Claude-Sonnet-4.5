@@ -47,6 +47,17 @@ struct PaymentTestView: View {
         }
         .padding()
         .navigationTitle("Payment Test")
+        .fullScreenCover(isPresented: $vm.showSuccessScreen) {
+            if let payment = vm.successPayment {
+                NavigationView {
+                    PaymentSuccessView(
+                        payment: payment,
+                        payeeName: vm.successPayeeName,
+                        coinsEarned: vm.successCoinsEarned
+                    )
+                }
+            }
+        }
     }
 }
 

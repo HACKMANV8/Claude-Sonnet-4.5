@@ -7,6 +7,8 @@ struct Payment: Identifiable, Codable {
     let amountPaise: Int
     let status: String    // success | failed | pending
     let razorpayPaymentId: String?
+    let orderId: String?
+    let recipient: String?
     let createdAt: Date?
 }
 

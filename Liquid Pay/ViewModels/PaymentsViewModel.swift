@@ -35,6 +35,8 @@ final class PaymentsViewModel: ObservableObject {
                     amountPaise: data["amountPaise"] as? Int ?? 0,
                     status: data["status"] as? String ?? "pending",
                     razorpayPaymentId: data["razorpayPaymentId"] as? String,
+                    orderId: data["orderId"] as? String,
+                    recipient: data["recipient"] as? String,
                     createdAt: ts?.dateValue()
                 )
             } ?? []
