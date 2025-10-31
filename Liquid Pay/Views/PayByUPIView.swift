@@ -4,8 +4,8 @@ import FirebaseFirestore
 
 struct PayByUPIView: View {
     @StateObject private var vm = PaymentViewModel()
-    @State private var upiId: String
-    @State private var amountInInr: String
+    @State private var upiId: String = ""
+    @State private var amountInInr: String = ""
     @State private var showErrorAlert: Bool = false
     @State private var errorAlertMessage: String = ""
     @Environment(\.dismiss) private var dismiss
@@ -14,6 +14,8 @@ struct PayByUPIView: View {
     @Binding var selectedVoucher: Voucher?
     let contactName: String?
     let upiSaveKey: String?
+    let initialUPIId: String
+    let initialAmount: String
     
     // Load vouchers independently if not provided
     @State private var loadedVouchers: [Voucher] = []
@@ -25,8 +27,8 @@ struct PayByUPIView: View {
     init(vouchers: [Voucher], selectedVoucher: Binding<Voucher?>, initialUPIId: String = "", initialAmount: String = "", contactName: String? = nil, upiSaveKey: String? = nil) {
         self.vouchers = vouchers
         self._selectedVoucher = selectedVoucher
-        self._upiId = State(initialValue: initialUPIId)
-        self._amountInInr = State(initialValue: initialAmount)
+        self.initialUPIId = initialUPIId
+        self.initialAmount = initialAmount
         self.contactName = contactName
         self.upiSaveKey = upiSaveKey
     }
@@ -201,6 +203,17 @@ struct PayByUPIView: View {
         .navigationTitle("Pay by UPI ID")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
+            // Pre-fill UPI ID and amount from initial values
+            print("🔵 PayByUPIView onAppear - initialUPIId: '\(initialUPIId)', initialAmount: '\(initialAmount)'")
+            if !initialUPIId.isEmpty {
+                upiId = initialUPIId
+                print("✅ Setting upiId to: \(initialUPIId)")
+            }
+            if !initialAmount.isEmpty {
+                amountInInr = initialAmount
+                print("✅ Setting amountInInr to: \(initialAmount)")
+            }
+            
             // Load vouchers if not provided
             if vouchers.isEmpty, let uid = Auth.auth().currentUser?.uid {
                 vouchersListener?.remove()

@@ -43,11 +43,20 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openPayWithUPI)) { note in
             if let upi = note.userInfo?["upiId"] as? String,
                let amountPaise = note.userInfo?["amountPaise"] as? Int {
+                print("🔔 MainTabView: Received openPayWithUPI - UPI: '\(upi)', Amount: \(amountPaise) paise")
+                // First dismiss if already showing
+                if showQuickPay {
+                    showQuickPay = false
+                }
+                // Update values
                 self.quickUPI = upi
                 self.quickAmountRupees = String(max(1, amountPaise / 100))
                 self.quickContact = note.userInfo?["contactName"] as? String
+                print("✅ MainTabView: Set quickUPI='\(quickUPI)', quickAmountRupees='\(quickAmountRupees)', contact='\(quickContact ?? "nil")'")
                 selectedTab = 2 // Switch to Pay tab
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                // Show sheet after a brief delay to ensure values are set
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    print("📱 MainTabView: Showing sheet with UPI='\(self.quickUPI)', Amount='\(self.quickAmountRupees)'")
                     self.showQuickPay = true
                 }
             }
@@ -66,6 +75,7 @@ struct MainTabView: View {
                     upiSaveKey: "reminder_\(quickUPI)"
                 )
             }
+            .id("\(quickUPI)_\(quickAmountRupees)_\(quickContact ?? "")") // Force recreation when values change
         }
         .sheet(isPresented: $showReceive) {
             ReceivePaymentView()
