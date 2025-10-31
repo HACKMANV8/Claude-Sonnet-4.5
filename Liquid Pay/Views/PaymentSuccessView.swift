@@ -13,6 +13,8 @@ struct PaymentSuccessView: View {
     @State private var showConfetti = false
     @State private var showShareSheet = false
     @State private var pulseAnimation = false
+    @State private var pendingReward: ContextReward? = nil
+    @State private var isClaiming: Bool = false
     
     var body: some View {
         ZStack {
@@ -116,6 +118,43 @@ struct PaymentSuccessView: View {
                     )
                     .opacity(showContent ? 1 : 0)
                     .offset(y: showContent ? 0 : 20)
+
+                    // Context Mission card (if any)
+                    if let reward = pendingReward, !UserDefaults.standard.isContextRewardClaimed(paymentId: reward.paymentId) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text(reward.title)
+                                    .font(.headline)
+                                Spacer()
+                                Text("+\(reward.coins) coins")
+                                    .font(.headline)
+                                    .foregroundColor(.green)
+                            }
+                            Text(reward.reason)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Button {
+                                claimContextReward(reward)
+                            } label: {
+                                HStack {
+                                    Image(systemName: "star.fill")
+                                    Text(isClaiming ? "Claiming..." : "Claim +\(reward.coins) coins")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.accentColor)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                            }
+                            .disabled(isClaiming)
+                        }
+                        .padding(16)
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(16)
+                        .opacity(showContent ? 1 : 0)
+                        .offset(y: showContent ? 0 : 20)
+                    }
                     
                     // Payment details
                     VStack(spacing: 16) {
@@ -232,6 +271,14 @@ struct PaymentSuccessView: View {
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: [generateShareText()])
         }
+        .onAppear {
+            // Load pending reward and ensure it belongs to this payment
+            if let pr = UserDefaults.standard.getPendingContextReward(), pr.paymentId == payment.id {
+                pendingReward = pr
+            } else {
+                pendingReward = nil
+            }
+        }
     }
     
     private func generateShareText() -> String {
@@ -247,6 +294,28 @@ struct PaymentSuccessView: View {
         text += "\n⭐ Earned \(coinsEarned) Liquid Coins!\n"
         text += "\nPowered by Liquid Pay 💧"
         return text
+    }
+}
+
+// MARK: - Context Reward Claim
+extension PaymentSuccessView {
+    private func claimContextReward(_ reward: ContextReward) {
+        guard !isClaiming else { return }
+        isClaiming = true
+        Task { @MainActor in
+            defer { self.isClaiming = false }
+            guard let uid = Auth.auth().currentUser?.uid else { return }
+            do {
+                try await RewardsService.shared.awardGameWin(uid: uid, prize: reward.coins, game: "context_mission")
+                UserDefaults.standard.markContextRewardClaimed(paymentId: reward.paymentId)
+                UserDefaults.standard.setPendingContextReward(nil)
+                self.pendingReward = nil
+                // Celebration
+                self.showConfetti = true
+            } catch {
+                // no-op demo error handling
+            }
+        }
     }
 }
 

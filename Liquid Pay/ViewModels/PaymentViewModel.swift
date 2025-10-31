@@ -130,6 +130,28 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
                 }
             }
             
+            // Context Mission (client-only): evaluate and stash pending reward for success screen
+            Task { @MainActor in
+                let offer = ContextRewardsEngine.evaluate(
+                    amountPaise: self.currentAmountPaise,
+                    recipient: self.currentPayeeName,
+                    pci: nil,
+                    streakDays: nil
+                )
+                if let offer = offer, !UserDefaults.standard.isContextRewardClaimed(paymentId: payment_id) {
+                    let reward = ContextReward(
+                        paymentId: payment_id,
+                        title: offer.title,
+                        reason: offer.reason,
+                        coins: max(1, offer.coins),
+                        createdAt: Date()
+                    )
+                    UserDefaults.standard.setPendingContextReward(reward)
+                } else {
+                    UserDefaults.standard.setPendingContextReward(nil)
+                }
+            }
+
             // Optimistically award coins (server webhook also awards idempotently)
             Task {
                 guard let uid = Auth.auth().currentUser?.uid else { return }
