@@ -177,6 +177,88 @@ final class RewardsService {
         try await db.collection("users").document(uid).collection("vouchers").document(voucherId)
             .setData(["status": "used", "redeemedAt": FieldValue.serverTimestamp()], merge: true)
     }
+
+    // MARK: - Daily Reward
+    func awardDailyRewardIfEligible(uid: String, min: Int = 5, max: Int = 10, cooldownHours: Double = 24) async throws -> (awarded: Int, nextEligibleAt: Date?) {
+        var resultAwarded = 0
+        var nextAt: Date? = nil
+        _ = try await db.runTransaction { (tx, errorPointer) -> Any? in
+            let userRef = self.db.collection("users").document(uid)
+            do {
+                let userSnap = try tx.getDocument(userRef)
+                let current = (userSnap.data()? ["coinBalance"] as? Int) ?? 0
+                let lastTs = userSnap.get("lastDailyRewardAt") as? Timestamp
+                let lastDate = lastTs?.dateValue()
+                if let lastDate = lastDate, Date().timeIntervalSince(lastDate) < cooldownHours * 3600 {
+                    nextAt = Date(timeInterval: cooldownHours * 3600, since: lastDate)
+                    return nil // not eligible
+                }
+                let award = Int.random(in: min...max)
+                resultAwarded = award
+                tx.setData(["coinBalance": current + award, "lastDailyRewardAt": FieldValue.serverTimestamp()], forDocument: userRef, merge: true)
+                let ledgerRef = userRef.collection("coin_ledger").document("daily_\(Int(Date().timeIntervalSince1970))")
+                tx.setData([
+                    "type": "daily_reward",
+                    "amount": award,
+                    "note": "Daily reward",
+                    "createdAt": FieldValue.serverTimestamp()
+                ], forDocument: ledgerRef)
+            } catch {
+                errorPointer?.pointee = error as NSError
+            }
+            return nil
+        }
+        return (resultAwarded, nextAt)
+    }
+
+    // MARK: - Games (entry and win)
+    func chargeGameEntry(uid: String, fee: Int, game: String) async throws {
+        guard fee > 0 else { return }
+        _ = try await db.runTransaction { (tx, errorPointer) -> Any? in
+            let userRef = self.db.collection("users").document(uid)
+            do {
+                let userSnap = try tx.getDocument(userRef)
+                let current = (userSnap.data()? ["coinBalance"] as? Int) ?? 0
+                if current < fee {
+                    errorPointer?.pointee = NSError(domain: "Rewards", code: 402, userInfo: [NSLocalizedDescriptionKey: "Insufficient coins"])
+                    return nil
+                }
+                tx.updateData(["coinBalance": current - fee], forDocument: userRef)
+                let ledgerRef = userRef.collection("coin_ledger").document("game_entry_\(Int(Date().timeIntervalSince1970))")
+                tx.setData([
+                    "type": "game_entry",
+                    "amount": -fee,
+                    "note": "Entry: \(game)",
+                    "createdAt": FieldValue.serverTimestamp()
+                ], forDocument: ledgerRef)
+            } catch {
+                errorPointer?.pointee = error as NSError
+            }
+            return nil
+        }
+    }
+
+    func awardGameWin(uid: String, prize: Int, game: String) async throws {
+        guard prize > 0 else { return }
+        _ = try await db.runTransaction { (tx, errorPointer) -> Any? in
+            let userRef = self.db.collection("users").document(uid)
+            do {
+                let userSnap = try tx.getDocument(userRef)
+                let current = (userSnap.data()? ["coinBalance"] as? Int) ?? 0
+                tx.updateData(["coinBalance": current + prize], forDocument: userRef)
+                let ledgerRef = userRef.collection("coin_ledger").document("game_win_\(Int(Date().timeIntervalSince1970))")
+                tx.setData([
+                    "type": "game_win",
+                    "amount": prize,
+                    "note": "Win: \(game)",
+                    "createdAt": FieldValue.serverTimestamp()
+                ], forDocument: ledgerRef)
+            } catch {
+                errorPointer?.pointee = error as NSError
+            }
+            return nil
+        }
+    }
 }
 
 

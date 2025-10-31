@@ -1,223 +1,365 @@
 import SwiftUI
 import FirebaseAuth
-import FirebaseFirestore
 
 struct RewardsView: View {
-    @StateObject private var vm = RewardsViewModel()
-    @State private var showRedeemSheet: Bool = false
-    @State private var redeemAmount: String = ""
+    @State private var coinBalance: Int = 0
+    @State private var isLoading: Bool = true
+    @State private var errorMessage: String?
+    @State private var showGame: Bool = false
+    @State private var activeGame: GameInfo? = nil
     @State private var showVoucherSheet: Bool = false
-    @State private var voucherAmountInr: String = ""
-    @State private var activeVouchers: [Voucher] = []
-    @State private var vouchersListener: ListenerRegistration?
-
+    @State private var selectedBrand: BrandCard? = nil
+    @State private var showRedeemSheet: Bool = false
+    @State private var dailyRewardNext: Date? = nil
+    
+    private var coinValueInInr: String { String(format: "₹%.2f", Double(coinBalance) / 100.0) }
+    private let entryFee = 25
+    private let winPrize = 50
+    private let dailyCapRupees = 50
+    
+    // Mini-game catalog (URLs can be replaced with hosted HTML5 games)
+    private let games: [GameInfo] = [
+        GameInfo(title: "Scratch Card", color: .orange, type: .scratch),
+        GameInfo(title: "Spin Wheel", color: .purple, type: .spin),
+        GameInfo(title: "Tic-Tac-Toe", color: .blue, type: .ttt)
+    ]
+    
+    // Dummy brand cards
+    private let brands: [BrandCard] = [
+        BrandCard(
+            name: "Amazon",
+            color: Color(red: 1.00, green: 0.60, blue: 0.00),
+            codePrefix: "AMZN",
+            logoURL: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Amazon_logo.svg/512px-Amazon_logo.svg.png",
+            coinsRequired: 1000
+        ),
+        BrandCard(
+            name: "Swiggy",
+            color: Color(red: 1.00, green: 0.47, blue: 0.12),
+            codePrefix: "SWGY",
+            logoURL: "https://upload.wikimedia.org/wikipedia/en/thumb/1/12/Swiggy_logo.svg/512px-Swiggy_logo.svg.png",
+            coinsRequired: 1500
+        ),
+        BrandCard(
+            name: "Flipkart",
+            color: Color(red: 0.03, green: 0.45, blue: 0.91),
+            codePrefix: "FLPK",
+            logoURL: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Flipkart_Logo.png/512px-Flipkart_Logo.png",
+            coinsRequired: 2000
+        ),
+        BrandCard(
+            name: "Myntra",
+            color: Color(red: 0.96, green: 0.34, blue: 0.57),
+            codePrefix: "MYNT",
+            logoURL: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Myntra_Logo.png/512px-Myntra_Logo.png",
+            coinsRequired: 1200
+        ),
+        BrandCard(
+            name: "Zomato",
+            color: Color(red: 0.87, green: 0.10, blue: 0.10),
+            codePrefix: "ZMTO",
+            logoURL: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Zomato_logo.png/512px-Zomato_logo.png",
+            coinsRequired: 1500
+        )
+    ]
+    
     var body: some View {
-        VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Liquid Coins").font(.caption).foregroundColor(.secondary)
-                Text("\(vm.coinBalance)").font(.system(size: 44, weight: .bold))
+        ScrollView {
+            VStack(spacing: 16) {
+                header
+                dailyRewardCard
+                gamesRow
+                vouchersCarousel
+                redeemToBankCard
+                NavigationLink(destination: CoinActivityView()) {
+                    HStack {
+                        Text("View Coin Activity").font(.headline)
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundColor(.secondary)
+                    }
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(12)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
-            .background(Color.yellow.opacity(0.15))
-            .cornerRadius(12)
-
-            Text("Earn 1 coin per ₹0.01 spent (100 coins = ₹1). Redeem coins anytime.")
-                .foregroundColor(.secondary)
-
-            if !vm.recentEntries.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Recent Activity").font(.caption).foregroundColor(.secondary)
-                    ForEach(vm.recentEntries) { entry in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(entryTitle(entry)).font(.subheadline)
-                                if let d = entry.createdAt {
-                                    Text(d.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundColor(.secondary)
-                                }
-                            }
-                            Spacer()
-                            Text(entry.amount >= 0 ? "+\(entry.amount)" : "\(entry.amount)")
-                                .font(.subheadline).bold()
-                                .foregroundColor(entry.amount >= 0 ? .green : .red)
-                        }
-                        .padding(.vertical, 6)
-                    }
-                    if vm.canLoadMore {
-                        Button {
-                            Task { await vm.loadMore() }
-                        } label: {
-                            HStack {
-                                Spacer()
-                                Text("Load more")
-                                Spacer()
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .padding(.top, 4)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
-            }
-
-            HStack(spacing: 12) {
-                Button {
-                    showRedeemSheet = true
-                    redeemAmount = ""
-                } label: {
-                    Text("Redeem Coins")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                }
-                Button {
-                    showVoucherSheet = true
-                } label: {
-                    Text("Create Voucher")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                }
-            }
-
-            if !activeVouchers.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Active Vouchers").font(.caption).foregroundColor(.secondary)
-                    ForEach(activeVouchers) { v in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(v.code).font(.subheadline).bold()
-                                if let d = v.createdAt {
-                                    Text("Created • " + d.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundColor(.secondary)
-                                }
-                            }
-                            Spacer()
-                            Text("₹\(v.valuePaise/100)")
-                                .font(.subheadline).bold()
-                        }
-                        .padding(.vertical, 6)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
-            }
-
-            Spacer()
         }
-        .padding()
         .navigationTitle("Rewards")
-        .onAppear {
-            vm.startListening()
-            if let uid = Auth.auth().currentUser?.uid {
-                vouchersListener?.remove(); vouchersListener = nil
-                vouchersListener = RewardsService.shared.listenActiveVouchers(uid: uid) { vouchers in
-                    activeVouchers = vouchers
+        .sheet(isPresented: $showGame) {
+            if let g = activeGame {
+                NavigationView {
+                    switch g.type {
+                    case .scratch:
+                        ScratchCardGameView(entryFee: entryFee, winPrize: winPrize, title: g.title) { showGame = false }
+                    case .spin:
+                        SpinWheelGameView(entryFee: entryFee, winPrize: winPrize, title: g.title) { showGame = false }
+                    case .ttt:
+                        TicTacToeGameView(entryFee: entryFee, winPrize: winPrize, title: g.title) { showGame = false }
+                    }
                 }
             }
-        }
-        .onDisappear { vouchersListener?.remove(); vouchersListener = nil }
-        .sheet(isPresented: $showRedeemSheet) {
-            RedeemSheetView(coinBalance: vm.coinBalance, onRedeem: { amount, note in
-                Task { await vm.redeem(amount: amount, note: note) }
-                showRedeemSheet = false
-            })
-            .presentationDetents([.height(260)])
         }
         .sheet(isPresented: $showVoucherSheet) {
-            CreateVoucherSheetView(coinBalance: vm.coinBalance) { inr in
-                Task {
-                    if let uid = Auth.auth().currentUser?.uid { try? await RewardsService.shared.createVoucher(uid: uid, valuePaise: max(100, inr * 100)) }
+            if let brand = selectedBrand {
+                VoucherRedeemSheet(brand: brand, balance: coinBalance) { coinsToSpend in
+                    Task { await redeemCoins(coinsToSpend, note: "Voucher \(brand.name)") }
                 }
-                showVoucherSheet = false
             }
-            .presentationDetents([.height(260)])
         }
-    }
-
-    private func entryTitle(_ entry: CoinEntry) -> String {
-        switch entry.type {
-        case "earn": return entry.note?.isEmpty == false ? entry.note! : "Earned"
-        case "redeem": return entry.note?.isEmpty == false ? entry.note! : "Redeemed"
-        default: return entry.note?.isEmpty == false ? entry.note! : entry.type.capitalized
+        .sheet(isPresented: $showRedeemSheet) {
+            BankRedeemSheet(maxRupeesPerDay: dailyCapRupees, balanceCoins: coinBalance) { rupees in
+                let coins = rupees * 100
+                Task { await redeemCoins(coins, note: "Bank redeem (test)") }
+            }
         }
+        .overlay { if isLoading { ProgressView() } }
+        .onAppear { listen() }
     }
-}
-
-private struct CreateVoucherSheetView: View {
-    let coinBalance: Int
-    var onCreate: (_ amountInRupees: Int) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var amountText: String = ""
-
-    private var coinsRequired: Int { (Int(amountText) ?? 0) * 100 } // 100 coins = ₹1
-
-    var body: some View {
-        VStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 2).fill(Color.secondary.opacity(0.4)).frame(width: 44, height: 4).padding(.top, 8)
-            Text("Create Voucher").font(.headline)
-            Text("100 coins = ₹1").foregroundColor(.secondary).font(.subheadline)
-            TextField("Amount (₹)", text: $amountText)
-                .keyboardType(.numberPad)
-                .textFieldStyle(.roundedBorder)
-            HStack {
-                Text("Cost: \(coinsRequired) coins").foregroundColor(.secondary)
-                Spacer()
-                Text("Balance: \(coinBalance)").foregroundColor(.secondary)
+    
+    // MARK: - Sections
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Liquid Coins").font(.caption).foregroundColor(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("\(coinBalance)").font(.system(size: 42, weight: .bold))
+                Text("(\(coinValueInInr))").foregroundColor(.secondary)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color.yellow.opacity(0.15))
+        .cornerRadius(12)
+    }
+    
+    private var dailyRewardCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Button("Cancel") { dismiss() }
+                Text("Daily Reward").font(.headline)
                 Spacer()
-                Button("Create") {
-                    let inr = max(1, Int(amountText) ?? 0)
-                    guard coinsRequired <= coinBalance else { return }
-                    onCreate(inr)
-                }
-                .buttonStyle(.borderedProminent)
+                if let next = dailyRewardNext { Text("Next: \(relative(next))").font(.caption).foregroundColor(.secondary) }
             }
+            Text("Collect 5–10 coins once every 24h.").font(.subheadline).foregroundColor(.secondary)
+            Button {
+                Task { await claimDaily() }
+            } label: {
+                Text(canClaimDaily ? "Collect now" : "Collected")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(canClaimDaily ? Color.accentColor : Color.gray.opacity(0.5))
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+            }
+            .disabled(!canClaimDaily)
         }
         .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    private var gamesRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Mini‑Games").font(.headline)
+                Spacer()
+                Text("Entry: \(entryFee) coins • Win: +\(winPrize)").font(.caption).foregroundColor(.secondary)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(games) { g in
+                        Button {
+                            activeGame = g
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                showGame = true
+                            }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(g.title).font(.headline).foregroundColor(.white)
+                                Text("Tap to play").font(.caption).foregroundColor(.white.opacity(0.9))
+                            }
+                            .padding()
+                            .frame(width: 180, height: 90, alignment: .leading)
+                            .background(g.color)
+                            .cornerRadius(12)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private var vouchersCarousel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Vouchers").font(.headline)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(brands) { brand in
+                        Button {
+                            selectedBrand = brand
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                showVoucherSheet = true
+                            }
+                        } label: {
+                            ZStack(alignment: .bottomLeading) {
+                                brand.color
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack(spacing: 8) {
+                                        AsyncImage(url: URL(string: brand.logoURL)) { phase in
+                                            switch phase {
+                                            case .empty: ProgressView().tint(.white)
+                                            case .success(let image): image.resizable().scaledToFit()
+                                            case .failure: Image(systemName: "giftcard").resizable().scaledToFit().foregroundColor(.white)
+                                            @unknown default: EmptyView()
+                                            }
+                                        }
+                                        .frame(width: 28, height: 28)
+                                        Text(brand.name)
+                                            .font(.headline)
+                                            .foregroundColor(.white)
+                                            .lineLimit(1)
+                                    }
+                                    Text("\(brand.coinsRequired) coins")
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.9))
+                                }
+                                .padding(12)
+                            }
+                            .frame(width: 180, height: 90)
+                            .cornerRadius(12)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private var redeemToBankCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Redeem to Bank (Test)").font(.headline)
+            Text("Redeem up to ₹\(dailyCapRupees) per day").font(.caption).foregroundColor(.secondary)
+            Button {
+                showRedeemSheet = true
+            } label: {
+                Text("Redeem now")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.green)
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+            }
+            .disabled(coinBalance < 1000)
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    // MARK: - Logic
+    private var canClaimDaily: Bool { dailyRewardNext == nil || (dailyRewardNext ?? Date()) <= Date() }
+    
+    private func listen() {
+        guard let uid = Auth.auth().currentUser?.uid else { isLoading = false; return }
+        _ = RewardsService.shared.listenToBalanceAndEntries(uid: uid) { balance, _ in
+            self.coinBalance = balance
+            self.isLoading = false
+        }
+    }
+    
+    private func claimDaily() async {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        do {
+            let res = try await RewardsService.shared.awardDailyRewardIfEligible(uid: uid)
+            if res.awarded == 0 { self.dailyRewardNext = res.nextEligibleAt } else { self.dailyRewardNext = Date(timeIntervalSinceNow: 24*3600); UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
+        } catch { self.errorMessage = error.localizedDescription }
+    }
+    
+    private func redeemCoins(_ coins: Int, note: String) async {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        do { try await RewardsService.shared.redeemCoins(uid: uid, amount: coins, note: note); UINotificationFeedbackGenerator().notificationOccurred(.success) } catch { errorMessage = error.localizedDescription; UINotificationFeedbackGenerator().notificationOccurred(.error) }
+    }
+    
+    private func relative(_ d: Date) -> String {
+        let secs = Int(d.timeIntervalSinceNow)
+        if secs <= 0 { return "now" }
+        let h = secs/3600; let m = (secs%3600)/60
+        if h > 0 { return "in \(h)h \(m)m" }
+        return "in \(m)m"
     }
 }
-private struct RedeemSheetView: View {
-    let coinBalance: Int
-    var onRedeem: (_ amount: Int, _ note: String?) -> Void
 
+// MARK: - Models & Sheets
+private struct GameInfo: Identifiable { let id = UUID(); let title: String; let color: Color; let type: GameType }
+private enum GameType { case scratch, spin, ttt }
+private struct BrandCard: Identifiable { let id = UUID(); let name: String; let color: Color; let codePrefix: String; let logoURL: String; let coinsRequired: Int }
+
+// GamesSheet replaced by native SwiftUI game views
+
+private struct VoucherRedeemSheet: View {
+    let brand: BrandCard
+    let balance: Int
+    var onRedeem: (Int) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var amountText: String = ""
-    @State private var noteText: String = ""
-
+    @State private var coinsText: String = "1000" // default
+    @State private var code: String? = nil
+    
     var body: some View {
         VStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 2).fill(Color.secondary.opacity(0.4)).frame(width: 44, height: 4).padding(.top, 8)
-            Text("Redeem Coins").font(.headline)
-            Text("Balance: \(coinBalance)").foregroundColor(.secondary).font(.subheadline)
-            TextField("Amount to redeem", text: $amountText)
-                .keyboardType(.numberPad)
-                .textFieldStyle(.roundedBorder)
-            TextField("Note (optional)", text: $noteText)
-                .textFieldStyle(.roundedBorder)
+            HStack(spacing: 10) {
+                AsyncImage(url: URL(string: brand.logoURL)) { phase in
+                    switch phase {
+                    case .empty: ProgressView()
+                    case .success(let image): image.resizable().scaledToFit()
+                    case .failure: Image(systemName: "giftcard").resizable().scaledToFit()
+                    @unknown default: EmptyView()
+                    }
+                }
+                .frame(width: 28, height: 28)
+                Text("Redeem \(brand.name)").font(.headline)
+                Spacer()
+            }
+            TextField("Coins to spend", text: $coinsText).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+            HStack { Text("Balance: \(balance)").foregroundColor(.secondary); Spacer() }
+            if let c = code { Text("Your code: \(c)").font(.headline).foregroundColor(.green) }
             HStack {
                 Button("Cancel") { dismiss() }
                 Spacer()
                 Button("Redeem") {
-                    let amt = Int(amountText) ?? 0
-                    guard amt > 0, amt <= coinBalance else { return }
-                    onRedeem(amt, noteText.isEmpty ? nil : noteText)
-                }
-                .buttonStyle(.borderedProminent)
+                    let coins = max(100, Int(coinsText) ?? 0)
+                    onRedeem(coins)
+                    code = "\(brand.codePrefix)-\(Int.random(in: 1000...9999))-\(Int.random(in: 1000...9999))"
+                }.buttonStyle(.borderedProminent)
             }
         }
         .padding()
+        .onAppear { coinsText = String(brand.coinsRequired) }
+    }
+}
+
+private struct BankRedeemSheet: View {
+    let maxRupeesPerDay: Int
+    let balanceCoins: Int
+    var onRedeem: (Int) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var rupeesText: String = ""
+    @State private var error: String? = nil
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 2).fill(Color.secondary.opacity(0.4)).frame(width: 44, height: 4).padding(.top, 8)
+            Text("Redeem to Bank (Test)").font(.headline)
+            TextField("Amount (₹)", text: $rupeesText).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+            if let e = error { Text(e).foregroundColor(.red).font(.caption) }
+            HStack { Button("Cancel") { dismiss() }; Spacer(); Button("Redeem") { redeemTap() }.buttonStyle(.borderedProminent) }
+        }.padding()
+    }
+    private func redeemTap() {
+        let rupees = max(1, Int(rupeesText) ?? 0)
+        if rupees > maxRupeesPerDay { error = "Max ₹\(maxRupeesPerDay) per day"; return }
+        let needed = rupees * 100
+        if needed > balanceCoins { error = "Insufficient coins"; return }
+        onRedeem(rupees)
+        dismiss()
     }
 }
 

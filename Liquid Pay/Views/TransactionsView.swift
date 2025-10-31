@@ -1,7 +1,9 @@
 import SwiftUI
+import Contacts
 
 struct TransactionsView: View {
     @StateObject private var vm = PaymentsViewModel()
+    @StateObject private var contactsService = ContactsService.shared
     @State private var searchText: String = ""
     @State private var sortOption: SortOption = .newest
 
@@ -45,16 +47,45 @@ struct TransactionsView: View {
             } else {
                 ForEach(displayedPayments) { payment in
                     NavigationLink(destination: PaymentReceiptView(payment: payment)) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                                Text(Currency.formatPaise(payment.amountPaise)).font(.headline)
+                        HStack(spacing: 12) {
+                            // Icon based on status
+                            Image(systemName: payment.status == "success" ? "checkmark.circle.fill" : payment.status == "failed" ? "xmark.circle.fill" : "clock.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(payment.status == "success" ? .green : payment.status == "failed" ? .red : .orange)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(Currency.formatPaise(payment.amountPaise))
+                                    .font(.headline)
+                                
+                                if let recipient = payment.recipient, !recipient.isEmpty {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("To: \(getDisplayName(for: recipient))")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                        
+                                        // Show UPI ID if different from display name
+                                        if getDisplayName(for: recipient) != recipient {
+                                            Text(recipient)
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary.opacity(0.8))
+                                        }
+                                    }
+                                }
+                                
                                 if let date = payment.createdAt {
-                            Text(date.formatted()).font(.caption).foregroundColor(.secondary)
+                                    Text(date.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
                             }
+                            
                             Spacer()
-                            StatusChip(text: payment.status)
+                            
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14))
+                                .foregroundColor(.secondary)
                         }
+                        .padding(.vertical, 4)
                     }
                     .buttonStyle(.plain)
                 }
@@ -80,8 +111,38 @@ struct TransactionsView: View {
                 }
             }
         }
-        .onAppear { vm.startListening() }
+        .onAppear { 
+            vm.startListening()
+            if contactsService.contacts.isEmpty && contactsService.authorizationStatus == .authorized {
+                Task {
+                    await contactsService.fetchContacts()
+                }
+            }
+        }
         .onDisappear { vm.stopListening() }
+    }
+    
+    // Helper function to get display name from UPI ID
+    private func getDisplayName(for upiId: String) -> String {
+        // Extract phone number from UPI ID (format: phone@provider)
+        let components = upiId.split(separator: "@")
+        guard let phoneNumber = components.first else { return upiId }
+        
+        let cleanedPhone = String(phoneNumber).filter { $0.isNumber }
+        
+        // Search contacts for matching phone number
+        for contact in contactsService.contacts {
+            for contactPhone in contact.phoneNumbers {
+                let cleanedContactPhone = contactPhone.filter { $0.isNumber }
+                // Check if the last 10 digits match (Indian phone numbers)
+                if cleanedPhone.suffix(10) == cleanedContactPhone.suffix(10) {
+                    return contact.displayName
+                }
+            }
+        }
+        
+        // If no contact found, return the UPI ID
+        return upiId
     }
 }
 
