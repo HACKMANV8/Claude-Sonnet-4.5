@@ -37,20 +37,6 @@ struct QRScannerView: View {
                 
                 Spacer()
                 
-                VStack(spacing: 16) {
-                    Image(systemName: "qrcode.viewfinder")
-                        .font(.system(size: 80))
-                        .foregroundColor(.white)
-                    Text("Scan QR Code")
-                        .font(.title2)
-                        .bold()
-                        .foregroundColor(.white)
-                    Text("Position the QR code within the frame")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.8))
-                }
-                .padding(.bottom, 20)
-                
                 // Gallery upload button
                 Button {
                     showImagePicker = true
@@ -93,14 +79,14 @@ struct QRScannerView: View {
                 )
         }
         .sheet(isPresented: $showImagePicker) {
-            ImagePicker(selectedImage: $selectedImage)
+            QRImagePicker(selectedImage: $selectedImage)
         }
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) { }
         } message: {
             Text(errorMessage)
         }
-        .onChange(of: selectedImage) { newImage in
+        .onChange(of: selectedImage) { oldValue, newImage in
             if let image = newImage {
                 detectQRCode(in: image)
             }
@@ -133,8 +119,8 @@ struct QRScannerView: View {
     }
 }
 
-// MARK: - Image Picker
-struct ImagePicker: UIViewControllerRepresentable {
+// MARK: - QR Image Picker
+private struct QRImagePicker: UIViewControllerRepresentable {
     @Binding var selectedImage: UIImage?
     @Environment(\.dismiss) private var dismiss
     
@@ -155,9 +141,9 @@ struct ImagePicker: UIViewControllerRepresentable {
     }
     
     class Coordinator: NSObject, PHPickerViewControllerDelegate {
-        let parent: ImagePicker
+        let parent: QRImagePicker
         
-        init(_ parent: ImagePicker) {
+        init(_ parent: QRImagePicker) {
             self.parent = parent
         }
         

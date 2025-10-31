@@ -80,9 +80,6 @@ final class ContactsService: ObservableObject {
             CNContactImageDataKey
         ] as [CNKeyDescriptor]
         
-        let request = CNContactFetchRequest(keysToFetch: keys)
-        request.sortOrder = .givenName
-        
         do {
             let fetchedContacts: [ContactInfo] = try await withCheckedThrowingContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {

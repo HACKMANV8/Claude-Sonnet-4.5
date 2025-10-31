@@ -233,11 +233,14 @@ struct PayByUPIView: View {
                         coinsEarned: vm.successCoinsEarned
                     )
                 }
+                .interactiveDismissDisabled(true)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .paymentCompleted)) { _ in
-            // Dismiss this flow when payment completes
-            dismiss()
+            // Dismiss PayByUPIView only when user explicitly closes success screen
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                dismiss()
+            }
         }
     }
     
