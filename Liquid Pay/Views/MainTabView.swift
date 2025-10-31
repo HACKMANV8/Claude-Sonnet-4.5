@@ -46,7 +46,10 @@ struct MainTabView: View {
                 self.quickUPI = upi
                 self.quickAmountRupees = String(max(1, amountPaise / 100))
                 self.quickContact = note.userInfo?["contactName"] as? String
-                self.showQuickPay = true
+                selectedTab = 2 // Switch to Pay tab
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self.showQuickPay = true
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openReceive)) { _ in

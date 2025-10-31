@@ -30,6 +30,7 @@ struct SettingsView: View {
     @State private var reminders: [BillReminder] = []
     @State private var showAddReminder: Bool = false
     @State private var editingReminder: BillReminder? = nil
+    @StateObject private var contactsService = ContactsService.shared
     
     var body: some View {
         Form {
@@ -471,21 +472,57 @@ private struct ReminderEditorSheet: View {
     let editing: BillReminder?
     var onDone: (BillReminder?) -> Void
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var contactsService = ContactsService.shared
+    @State private var selectedContact: ContactInfo? = nil
     @State private var contactName: String = ""
     @State private var upiId: String = ""
     @State private var amount: String = ""
     @State private var isCollect: Bool = false
     @State private var date: Date = Date()
     @State private var weekday: Int = Calendar.current.component(.weekday, from: Date())
+    @State private var showContactPicker: Bool = false
     
     var body: some View {
         NavigationView {
             Form {
                 Section(header: Text("Party")) {
-                    TextField("Contact name", text: $contactName)
-                    TextField("UPI ID (name@bank)", text: $upiId)
-                        .autocapitalization(.none)
-                        .textContentType(.username)
+                    Button {
+                        showContactPicker = true
+                    } label: {
+                        HStack {
+                            if let contact = selectedContact {
+                                Circle()
+                                    .fill(ContactsService.getContactAvatarColor(for: contact))
+                                    .frame(width: 32, height: 32)
+                                    .overlay(Text(contact.initials).font(.caption).foregroundColor(.white))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(contact.displayName)
+                                        .foregroundColor(.primary)
+                                    if let upi = contact.upiId {
+                                        Text(upi).font(.caption).foregroundColor(.secondary)
+                                    } else if let phone = contact.phoneNumbers.first {
+                                        Text(phone).font(.caption).foregroundColor(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundColor(.secondary)
+                            } else {
+                                Label("Select Contact", systemImage: "person.circle")
+                                    .foregroundColor(.accentColor)
+                            }
+                        }
+                    }
+                    if selectedContact != nil {
+                        TextField("Contact name (optional)", text: $contactName)
+                        TextField("UPI ID (name@bank)", text: $upiId)
+                            .autocapitalization(.none)
+                            .textContentType(.username)
+                    } else {
+                        TextField("Contact name", text: $contactName)
+                        TextField("UPI ID (name@bank)", text: $upiId)
+                            .autocapitalization(.none)
+                            .textContentType(.username)
+                    }
                 }
                 Section(header: Text("Amount & Type")) {
                     TextField("Amount (₹)", text: $amount).keyboardType(.numberPad)
@@ -514,6 +551,23 @@ private struct ReminderEditorSheet: View {
                     comps.minute = existing.minute
                     if let d = Calendar.current.date(from: comps) {
                         date = d
+                    }
+                    // Try to find matching contact
+                    if let match = contactsService.contacts.first(where: { $0.upiId == existing.upiId || $0.phoneNumbers.contains(where: { existing.upiId.contains($0) }) || $0.displayName == existing.contactName }) {
+                        selectedContact = match
+                    }
+                }
+                Task { await contactsService.requestAccess() }
+            }
+            .sheet(isPresented: $showContactPicker) {
+                ContactSearchSheet(contacts: contactsService.contacts) { contact in
+                    selectedContact = contact
+                    contactName = contact.displayName
+                    if let upi = contact.upiId, !upi.isEmpty {
+                        upiId = upi
+                    } else if let phone = contact.phoneNumbers.first, !phone.isEmpty {
+                        // Use phone number as fallback (user can edit to add @provider)
+                        upiId = phone
                     }
                 }
             }
@@ -546,6 +600,52 @@ private func weekdayName(_ w: Int) -> String {
     let names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
     let idx = max(1, min(7, w)) - 1
     return names[idx]
+}
+
+// MARK: - Contact Search Sheet
+private struct ContactSearchSheet: View {
+    let contacts: [ContactInfo]
+    var onSelect: (ContactInfo) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText: String = ""
+    
+    private var displayed: [ContactInfo] {
+        if searchText.trimmingCharacters(in: .whitespaces).isEmpty { return contacts }
+        let q = searchText.lowercased()
+        return contacts.filter { c in
+            c.displayName.lowercased().contains(q) ||
+            c.phoneNumbers.joined(separator: " ").contains(q)
+        }
+    }
+    
+    var body: some View {
+        NavigationView {
+            List(displayed, id: \.id) { c in
+                Button {
+                    onSelect(c)
+                    dismiss()
+                } label: {
+                    HStack(spacing: 12) {
+                        Circle().fill(ContactsService.getContactAvatarColor(for: c)).frame(width: 36, height: 36)
+                            .overlay(Text(c.initials).font(.caption).foregroundColor(.white))
+                        VStack(alignment: .leading) {
+                            Text(c.displayName).font(.body)
+                            if let upi = c.upiId {
+                                Text(upi).font(.caption).foregroundColor(.secondary)
+                            } else if let first = c.phoneNumbers.first {
+                                Text(first).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic))
+            .navigationTitle("Select Contact")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+            }
+        }
+    }
 }
 
 // MARK: - Privacy & Security Details
