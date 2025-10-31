@@ -9,8 +9,6 @@ struct PayByUPIView: View {
     @State private var showErrorAlert: Bool = false
     @State private var errorAlertMessage: String = ""
     @Environment(\.dismiss) private var dismiss
-    @FocusState private var focusedField: Field?
-    private enum Field { case upi, amount, note }
     
     let vouchers: [Voucher]
     @Binding var selectedVoucher: Voucher?
@@ -71,57 +69,31 @@ struct PayByUPIView: View {
                 Text("UPI ID")
                     .font(.headline)
                 
-                HStack(spacing: 8) {
-                    TextField("e.g., username@provider (@ybl, @oksbi)", text: $upiId)
-                        .keyboardType(.emailAddress)
-                        .textFieldStyle(.roundedBorder)
-                        .autocapitalization(.none)
-                        .textContentType(.username)
-                        .focused($focusedField, equals: .upi)
-                        .submitLabel(.next)
-                        .onSubmit { focusedField = .amount }
-                    Button {
-                        if let paste = UIPasteboard.general.string, !paste.isEmpty { upiId = paste }
-                    } label: {
-                        Image(systemName: "doc.on.clipboard")
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .overlay(
-                    HStack {
-                        Spacer()
-                        if !upiId.isEmpty {
-                            Button { upiId = "" } label: { Image(systemName: "xmark.circle.fill").foregroundColor(.secondary) }
-                                .padding(.trailing, 8)
-                        }
-                    }
-                )
-            }
-            
-            if upiId.contains("@"), !upiId.contains("@ybl") && !upiId.contains("@oksbi") && !upiId.contains("@okaxis") && !upiId.contains("@okhdfcbank") && !upiId.contains("@okicici") && !upiId.contains("@paytm") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Common providers")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    let suffixes = ["ybl","oksbi","okaxis","okhdfcbank","okicici","paytm"]
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(suffixes, id: \.self) { sfx in
+                TextField("e.g., username@provider (@ybl, @oksbi)", text: $upiId)
+                    .keyboardType(.emailAddress)
+                    .textFieldStyle(.roundedBorder)
+                    .autocapitalization(.none)
+                    .textContentType(.none)
+                    .overlay(
+                        HStack {
+                            Spacer()
+                            if !upiId.isEmpty {
                                 Button {
-                                    if let at = upiId.firstIndex(of: "@") {
-                                        upiId = String(upiId[..<at]) + "@" + sfx
-                                    }
+                                    upiId = ""
                                 } label: {
-                                    Text("@\(sfx)")
-                                        .font(.caption)
-                                        .padding(.horizontal, 10).padding(.vertical, 6)
-                                        .background(Color(.tertiarySystemBackground))
-                                        .cornerRadius(8)
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.secondary)
                                 }
+                                .padding(.trailing, 8)
                             }
                         }
-                    }
-                }
+                    )
+            }
+            
+            if upiId.hasSuffix("@") {
+                Text("Add your UPI provider after @, e.g., ybl, oksbi, okaxis")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
             
             VStack(alignment: .leading, spacing: 12) {
@@ -136,22 +108,10 @@ struct PayByUPIView: View {
                         .keyboardType(.numberPad)
                         .font(.title2)
                         .textFieldStyle(.plain)
-                        .focused($focusedField, equals: .amount)
                 }
                 .padding()
                 .background(Color(.secondarySystemBackground))
                 .cornerRadius(12)
-                HStack(spacing: 8) {
-                    ForEach([100,200,500,1000], id: \.self) { val in
-                        Button { amountInInr = String(val) } label: {
-                            Text("₹\(val)")
-                                .font(.caption)
-                                .padding(.horizontal, 10).padding(.vertical, 6)
-                                .background(Color(.tertiarySystemBackground))
-                                .cornerRadius(8)
-                        }
-                    }
-                }
             }
             
             // Note field (optional)
@@ -160,9 +120,6 @@ struct PayByUPIView: View {
                     .font(.headline)
                 TextField("Add a message for the recipient", text: $noteText)
                     .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .note)
-                    .submitLabel(.done)
-                    .onSubmit { focusedField = nil }
             }
             
             if !activeVouchers.isEmpty {
@@ -220,32 +177,19 @@ struct PayByUPIView: View {
                 .cornerRadius(12)
             }
             
-            VStack(spacing: 8) {
-                Button {
-                    Task { await processPayment() }
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.right.circle.fill")
-                        Text("Pay Now")
-                            .fontWeight(.semibold)
-                    }
+            Button {
+                Task {
+                    await processPayment()
+                }
+            } label: {
+                Text("Pay Now")
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                    .background(Color.blue)
                     .foregroundColor(.white)
-                    .cornerRadius(14)
-                    .shadow(color: .blue.opacity(0.25), radius: 8, x: 0, y: 4)
-                }
-                .disabled(upiId.isEmpty || amountInInr.isEmpty)
-                .opacity(upiId.isEmpty || amountInInr.isEmpty ? 0.6 : 1)
-                if let v = selectedVoucher, let rupees = Int(amountInInr), rupees > 0 {
-                    let discount = min(v.valuePaise, rupees * 100)
-                    let final = max(100, rupees * 100 - discount)
-                    Text("Payable: \(Currency.formatPaise(final)) after voucher")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                    .cornerRadius(12)
             }
+            .disabled(upiId.isEmpty || amountInInr.isEmpty)
             
             if let msg = vm.lastResultMessage {
                 Text(msg).foregroundColor(.secondary)
@@ -254,12 +198,6 @@ struct PayByUPIView: View {
             Spacer()
         }
         .padding()
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { focusedField = nil }
-            }
-        }
         .navigationTitle("Pay by UPI ID")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
