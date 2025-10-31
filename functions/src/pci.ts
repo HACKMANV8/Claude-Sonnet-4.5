@@ -2,7 +2,10 @@ import { logger } from "firebase-functions";
 import { getFirestore, FieldValue, Filter, Timestamp } from "firebase-admin/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 
-const db = getFirestore();
+// Lazy-load db to avoid calling getFirestore() before initializeApp()
+function getDb() {
+  return getFirestore();
+}
 
 type Flags = {
   onTime: boolean;
@@ -13,6 +16,7 @@ type Flags = {
 function clamp(n: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, n)); }
 
 export async function updatePCI(uid: string, eventDate: Date, flags: Flags): Promise<void> {
+  const db = getDb();
   const userRef = db.collection("users").doc(uid);
   await db.runTransaction(async (tx) => {
     const userDoc = await tx.get(userRef);
@@ -72,6 +76,7 @@ export async function updatePCI(uid: string, eventDate: Date, flags: Flags): Pro
 
 export const pciDailyRecovery = onSchedule({ schedule: "every day 02:00", timeZone: "Etc/UTC" }, async () => {
   // For users with recent activity, add passive recovery towards 700 baseline
+  const db = getDb();
   const snap = await db.collection("users")
     .where("pciUpdatedAt", ">=", new Date(Date.now() - 90*86400000))
     .get();

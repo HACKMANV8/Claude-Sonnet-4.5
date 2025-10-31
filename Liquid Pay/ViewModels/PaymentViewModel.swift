@@ -22,7 +22,18 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
 
     func startPayment(amountPaise: Int, billId: String, notes: [String: String]? = nil, payeeName: String? = nil) async {
         do {
-            let order = try await CloudFunctionsService.createOrder(amountPaise: amountPaise, billId: billId, notes: notes)
+            // Ensure uid is always in notes for webhook to extract
+            guard let uid = Auth.auth().currentUser?.uid else {
+                lastResultMessage = "User not authenticated"
+                return
+            }
+            var mergedNotes = notes ?? [:]
+            mergedNotes["uid"] = uid
+            if let payeeName = payeeName {
+                mergedNotes["recipient"] = payeeName
+            }
+            
+            let order = try await CloudFunctionsService.createOrder(amountPaise: amountPaise, billId: billId, notes: mergedNotes)
             let checkout = RazorpayCheckout.initWithKey(order.keyId, andDelegateWithData: self)
             self.razorpay = checkout
             self.currentBillId = billId
@@ -66,7 +77,7 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
     nonisolated func onPaymentError(_ code: Int32, description str: String, andData data: [AnyHashable : Any]?) {
         DispatchQueue.main.async { [weak self] in
             self?.lastResultMessage = "Payment failed: \(str)"
-            Task { await self?.record(status: "failed", paymentId: nil) }
+            Task { try? await self?.record(status: "failed", paymentId: nil) }
         }
     }
 
@@ -110,7 +121,14 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
             print("✅ showSuccessScreen is now: \(self.showSuccessScreen)")
             
             // Record payment
-            Task { await self.record(status: "success", paymentId: payment_id) }
+            Task { 
+                do {
+                    try await self.record(status: "success", paymentId: payment_id)
+                    print("✅ PaymentViewModel: Successfully recorded payment to Firestore")
+                } catch {
+                    print("❌ PaymentViewModel: Failed to record payment - \(error.localizedDescription)")
+                }
+            }
             
             // Optimistically award coins (server webhook also awards idempotently)
             Task {
@@ -133,9 +151,9 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
     }
 
     // MARK: - Persist
-    private func record(status: String, paymentId: String?) async {
+    private func record(status: String, paymentId: String?) async throws {
         guard let uid = Auth.auth().currentUser?.uid else { return }
-        try? await PaymentsService.shared.recordPayment(userId: uid, billId: currentBillId, amountPaise: currentAmountPaise, status: status, razorpayPaymentId: paymentId, orderId: currentOrderId, recipient: currentPayeeName, firstAttemptAt: firstAttemptAt)
+        try await PaymentsService.shared.recordPayment(userId: uid, billId: currentBillId, amountPaise: currentAmountPaise, status: status, razorpayPaymentId: paymentId, orderId: currentOrderId, recipient: currentPayeeName, firstAttemptAt: firstAttemptAt)
     }
 }
 

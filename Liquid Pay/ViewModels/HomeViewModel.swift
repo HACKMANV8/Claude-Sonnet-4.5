@@ -34,6 +34,8 @@ final class HomeViewModel: ObservableObject {
                 return
             }
             
+            print("🔄 HomeViewModel: Snapshot received with \(snapshot?.documents.count ?? 0) documents")
+            
             let payments: [Payment] = snapshot?.documents.compactMap { doc in
                 let data = doc.data()
                 let ts = data["createdAt"] as? Timestamp

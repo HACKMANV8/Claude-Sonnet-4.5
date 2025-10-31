@@ -20,7 +20,12 @@ final class UserPCIViewModel: ObservableObject {
         listener = db.collection("users").document(uid).addSnapshotListener { [weak self] snap, err in
             guard let self = self else { return }
             if let err = err { self.errorMessage = err.localizedDescription; self.isLoading = false; return }
-            guard let data = snap?.data() else { self.isLoading = false; return }
+            guard let data = snap?.data() else { 
+                // Initialize with default if no data exists
+                Task { await self.initializeDefaultPCI(uid: uid) }
+                self.isLoading = false
+                return 
+            }
             let s = data["pciScore"] as? Int ?? (data["pciScore"] as? Double).map { Int($0) } ?? 650
             self.score = s
             self.streakDays = data["pciStreakDays"] as? Int ?? 0
@@ -33,6 +38,18 @@ final class UserPCIViewModel: ObservableObject {
             }
             self.isLoading = false
         }
+    }
+    
+    private func initializeDefaultPCI(uid: String) async {
+        let initialData: [String: Any] = [
+            "pciScore": 650,
+            "pciStreakDays": 0,
+            "pciTrend": [["ts": Timestamp(date: Date()), "score": 650]],
+            "pciUpdatedAt": Timestamp(date: Date()),
+            "pciLastPaymentDate": Timestamp(date: Date()),
+            "pciDecayAnchor": Timestamp(date: Date())
+        ]
+        try? await db.collection("users").document(uid).setData(initialData, merge: true)
     }
     
     func stop() { listener?.remove(); listener = nil }

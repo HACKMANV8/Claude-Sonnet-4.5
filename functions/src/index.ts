@@ -78,22 +78,31 @@ app.post("/webhook", async (req: any, res: Response) => {
     }
 
     if (paymentId) {
+      // Extract userId and amountPaise from webhook payload
+      const userId: string | undefined = paymentEntity?.notes?.uid || orderEntity?.notes?.uid;
+      const amountPaise: number | undefined = paymentEntity?.amount || orderEntity?.amount;
+      
+      // Write/update payment document with ALL fields from webhook
       await db.collection("payments").doc(paymentId).set(
         {
           status,
           razorpayPaymentId: paymentId,
+          userId: userId || null,
+          amountPaise: amountPaise || null,
           billId: billId || null,
+          orderId: orderEntity?.id || paymentEntity?.order_id || null,
+          recipient: paymentEntity?.notes?.recipient || orderEntity?.notes?.recipient || null,
+          createdAt: paymentEntity?.created_at ? new Date(paymentEntity.created_at * 1000) : new Date(),
           updatedAt: new Date(),
         },
         { merge: true }
       );
+      
+      logger.info(`✅ Webhook updated payment ${paymentId}: userId=${userId}, amount=${amountPaise}, status=${status}`);
 
       // Award Liquid Coins on successful payments (idempotent)
       if (status === "success") {
         try {
-          const paySnap = await db.collection("payments").doc(paymentId).get();
-          const userId: string | undefined = paySnap.get("userId");
-          const amountPaise: number | undefined = paySnap.get("amountPaise");
           if (userId && typeof amountPaise === "number") {
             const baseCoins = amountPaise; // 1 coin per paise (100 coins = ₹1)
             // Weekend 2x multiplier
@@ -120,13 +129,14 @@ app.post("/webhook", async (req: any, res: Response) => {
           }
           // Update PCI (Payment Consistency Index)
           try {
-            const userIdPCI: string | undefined = paySnap.get("userId");
-            const firstAttemptAt: Date | undefined = paySnap.get("firstAttemptAt")?.toDate?.() || undefined;
+            // Fetch firstAttemptAt from the payment doc we just wrote
+            const payDoc = await db.collection("payments").doc(paymentId).get();
+            const firstAttemptAt: Date | undefined = payDoc.get("firstAttemptAt")?.toDate?.() || undefined;
             const createdAt: Date = (paymentEntity?.created_at ? new Date(paymentEntity.created_at * 1000) : new Date());
             const onTime = !!firstAttemptAt ? ((createdAt.getTime() - firstAttemptAt.getTime()) <= 5*60*1000) : true;
             const delayed = !!firstAttemptAt ? ((createdAt.getTime() - firstAttemptAt.getTime()) > 5*60*1000) : false;
-            if (userIdPCI) {
-              await updatePCI(userIdPCI, createdAt, { onTime, delayed, failedOnly: false });
+            if (userId) {
+              await updatePCI(userId, createdAt, { onTime, delayed, failedOnly: false });
             }
           } catch (e) {
             logger.error("pci update error", e);
