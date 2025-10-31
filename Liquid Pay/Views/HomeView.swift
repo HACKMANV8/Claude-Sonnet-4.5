@@ -86,20 +86,6 @@ struct HomeView: View {
                     .padding(.vertical, 8)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Last 7 Days").font(.caption).foregroundColor(.secondary)
-                    SparklineView(values: vm.last7DaysPaise.map { Double($0) / 100.0 })
-                        .frame(height: 48)
-                        .padding(.vertical, 6)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color.accentColor.opacity(0.08))
-                .cornerRadius(12)
-                
-                // Global Rates Section
-                GlobalRatesView()
-                
                 // PCI Compact Card
                 NavigationLink(destination: PCIView()) {
                     HStack {
@@ -114,6 +100,20 @@ struct HomeView: View {
                     .background(Color(.secondarySystemBackground))
                     .cornerRadius(12)
                 }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Last 7 Days").font(.caption).foregroundColor(.secondary)
+                    SparklineView(values: vm.last7DaysPaise.map { Double($0) / 100.0 })
+                        .frame(height: 48)
+                        .padding(.vertical, 6)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(Color.accentColor.opacity(0.08))
+                .cornerRadius(12)
+                
+                // Global Rates Section
+                GlobalRatesView()
             }
             .padding()
         }
