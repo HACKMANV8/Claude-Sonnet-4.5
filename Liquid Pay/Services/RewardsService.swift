@@ -58,18 +58,25 @@ final class RewardsService {
     }
 
     func redeemCoins(uid: String, amount: Int, note: String?) async throws {
-        guard amount > 0 else { return }
+        guard amount > 0 else {
+            print("⚠️ RewardsService: redeemCoins called with amount <= 0")
+            return
+        }
+        print("💸 RewardsService: Attempting to redeem \(amount) coins for user \(uid)")
         _ = try await db.runTransaction { (tx, errorPointer) -> Any? in
             let userRef = self.db.collection("users").document(uid)
             do {
                 let userSnap = try tx.getDocument(userRef)
                 let current = (userSnap.data()? ["coinBalance"] as? Int) ?? 0
+                print("💰 RewardsService: Current balance: \(current), Redeeming: \(amount)")
                 if current < amount {
+                    print("❌ RewardsService: Insufficient coins - need \(amount), have \(current)")
                     errorPointer?.pointee = NSError(domain: "Rewards", code: 400, userInfo: [NSLocalizedDescriptionKey: "Insufficient coins"])
                     return nil
                 }
 
                 tx.updateData(["coinBalance": current - amount], forDocument: userRef)
+                print("✅ RewardsService: Deducted \(amount) coins, new balance: \(current - amount)")
 
                 let ledgerRef = userRef.collection("coin_ledger").document("redeem_\(Int(Date().timeIntervalSince1970))")
                 tx.setData([
@@ -78,11 +85,14 @@ final class RewardsService {
                     "note": note ?? "",
                     "createdAt": FieldValue.serverTimestamp()
                 ], forDocument: ledgerRef)
+                print("✅ RewardsService: Ledger entry created for redemption")
             } catch {
+                print("❌ RewardsService: Transaction error - \(error.localizedDescription)")
                 errorPointer?.pointee = error as NSError
             }
             return nil
         }
+        print("✅ RewardsService: Redemption transaction completed successfully")
     }
 
     func awardCoinsForPayment(uid: String, paymentId: String, amountPaise: Int) async throws {
@@ -133,6 +143,16 @@ final class RewardsService {
                 )
             } ?? []
             onUpdate(vouchers)
+        }
+    }
+
+    // MARK: - Tier Listener
+    func listenToUserTier(uid: String, onUpdate: @escaping (_ tier: String, _ totalPayments: Int) -> Void) -> ListenerRegistration {
+        let ref = db.collection("users").document(uid)
+        return ref.addSnapshotListener { snap, _ in
+            let tier = (snap?.data()? ["tier"] as? String) ?? "bronze"
+            let total = (snap?.data()? ["totalPayments"] as? Int) ?? 0
+            onUpdate(tier, total)
         }
     }
 
@@ -187,20 +207,23 @@ final class RewardsService {
             do {
                 let userSnap = try tx.getDocument(userRef)
                 let current = (userSnap.data()? ["coinBalance"] as? Int) ?? 0
+                let tier = (userSnap.data()? ["tier"] as? String) ?? "bronze"
+                let tierMult = tier == "gold" ? 3 : (tier == "silver" ? 2 : 1)
                 let lastTs = userSnap.get("lastDailyRewardAt") as? Timestamp
                 let lastDate = lastTs?.dateValue()
                 if let lastDate = lastDate, Date().timeIntervalSince(lastDate) < cooldownHours * 3600 {
                     nextAt = Date(timeInterval: cooldownHours * 3600, since: lastDate)
                     return nil // not eligible
                 }
-                let award = Int.random(in: min...max)
+                let base = Int.random(in: min...max)
+                let award = base * tierMult
                 resultAwarded = award
                 tx.setData(["coinBalance": current + award, "lastDailyRewardAt": FieldValue.serverTimestamp()], forDocument: userRef, merge: true)
                 let ledgerRef = userRef.collection("coin_ledger").document("daily_\(Int(Date().timeIntervalSince1970))")
                 tx.setData([
                     "type": "daily_reward",
                     "amount": award,
-                    "note": "Daily reward",
+                    "note": tierMult > 1 ? "Daily reward (Tier x\(tierMult))" : "Daily reward",
                     "createdAt": FieldValue.serverTimestamp()
                 ], forDocument: ledgerRef)
             } catch {
@@ -245,12 +268,15 @@ final class RewardsService {
             do {
                 let userSnap = try tx.getDocument(userRef)
                 let current = (userSnap.data()? ["coinBalance"] as? Int) ?? 0
-                tx.updateData(["coinBalance": current + prize], forDocument: userRef)
+                let tier = (userSnap.data()? ["tier"] as? String) ?? "bronze"
+                let tierMult = tier == "gold" ? 3 : (tier == "silver" ? 2 : 1)
+                let award = prize * tierMult
+                tx.updateData(["coinBalance": current + award], forDocument: userRef)
                 let ledgerRef = userRef.collection("coin_ledger").document("game_win_\(Int(Date().timeIntervalSince1970))")
                 tx.setData([
                     "type": "game_win",
-                    "amount": prize,
-                    "note": "Win: \(game)",
+                    "amount": award,
+                    "note": tierMult > 1 ? "Win: \(game) (Tier x\(tierMult))" : "Win: \(game)",
                     "createdAt": FieldValue.serverTimestamp()
                 ], forDocument: ledgerRef)
             } catch {
@@ -263,11 +289,15 @@ final class RewardsService {
     // MARK: - Context Missions (Firestore-backed)
     func setPendingContextRewardIfAbsent(uid: String, paymentId: String, title: String, reason: String, coins: Int) async {
         let ref = db.collection("users").document(uid).collection("context_rewards").document(paymentId)
+        print("💾 RewardsService: Creating context reward for payment \(paymentId): \(title) (\(coins) coins)")
         do {
-            try await db.runTransaction { tx, errPtr in
+            _ = try await db.runTransaction { tx, errPtr in
                 do {
                     let snap = try tx.getDocument(ref)
-                    if snap.exists { return nil }
+                    if snap.exists {
+                        print("⚠️ RewardsService: Context reward already exists for \(paymentId), skipping")
+                        return nil
+                    }
                     tx.setData([
                         "status": "pending",
                         "title": title,
@@ -275,64 +305,102 @@ final class RewardsService {
                         "coins": coins,
                         "createdAt": FieldValue.serverTimestamp()
                     ], forDocument: ref)
+                    print("✅ RewardsService: Context reward created successfully for \(paymentId)")
                 } catch {
+                    print("❌ RewardsService: Transaction error: \(error.localizedDescription)")
                     errPtr?.pointee = error as NSError
                 }
                 return nil
             }
         } catch {
-            // no-op for demo; creation is best-effort
+            print("❌ RewardsService: Failed to create context reward: \(error.localizedDescription)")
         }
     }
 
-    func listenToContextReward(uid: String, paymentId: String, onUpdate: @escaping (ContextReward?) -> Void) -> ListenerRegistration {
+    func listenToContextReward(uid: String, paymentId: String, onUpdate: @escaping (ContextReward?, Bool) -> Void) -> ListenerRegistration {
         let ref = db.collection("users").document(uid).collection("context_rewards").document(paymentId)
-        return ref.addSnapshotListener { snap, _ in
-            guard let data = snap?.data() else { onUpdate(nil); return }
+        print("👂 RewardsService: Starting listener for context reward \(paymentId)")
+        return ref.addSnapshotListener { snap, error in
+            if let error = error {
+                print("❌ RewardsService: Listener error: \(error.localizedDescription)")
+                onUpdate(nil, false)
+                return
+            }
+            guard let data = snap?.data() else {
+                print("⚠️ RewardsService: No data in snapshot for \(paymentId)")
+                onUpdate(nil, false)
+                return
+            }
+            print("📥 RewardsService: Received snapshot for \(paymentId): \(data)")
             let status = data["status"] as? String ?? ""
-            guard status == "pending" else { onUpdate(nil); return }
+            let claimed = (status == "claimed")
             let title = data["title"] as? String ?? "Bonus"
             let reason = data["reason"] as? String ?? ""
             let coins = data["coins"] as? Int ?? 0
-            onUpdate(ContextReward(paymentId: paymentId, title: title, reason: reason, coins: coins, createdAt: Date()))
+            if status == "pending" || status == "claimed" {
+                print("✅ RewardsService: Context reward '")
+                onUpdate(ContextReward(paymentId: paymentId, title: title, reason: reason, coins: coins, createdAt: Date()), claimed)
+            } else {
+                print("⚠️ RewardsService: Status is '\(status)', not showing card")
+                onUpdate(nil, claimed)
+            }
         }
     }
 
     func claimContextReward(uid: String, paymentId: String) async throws {
+        print("🎁 RewardsService: Attempting to claim context reward for payment \(paymentId)")
         let contextRef = db.collection("users").document(uid).collection("context_rewards").document(paymentId)
         _ = try await db.runTransaction { (tx, errorPointer) -> Any? in
             do {
                 let snap = try tx.getDocument(contextRef)
-                guard snap.exists else { return nil }
+                guard snap.exists else {
+                    print("❌ RewardsService: Context reward document doesn't exist")
+                    return nil
+                }
                 let status = snap.data()? ["status"] as? String ?? ""
-                guard status == "pending" else { return nil }
+                print("📋 RewardsService: Context reward status: \(status)")
+                guard status == "pending" else {
+                    print("⚠️ RewardsService: Context reward not pending, skipping claim")
+                    return nil
+                }
                 let coins = snap.data()? ["coins"] as? Int ?? 0
                 let title = snap.data()? ["title"] as? String ?? "Context Reward"
+                print("💰 RewardsService: Claiming \(coins) coins from '\(title)'")
 
                 // Update user balance and ledger
                 let userRef = self.db.collection("users").document(uid)
                 let userSnap = try tx.getDocument(userRef)
                 let current = (userSnap.data()? ["coinBalance"] as? Int) ?? 0
-                tx.setData(["coinBalance": current + coins], forDocument: userRef, merge: true)
+                let tier = (userSnap.data()? ["tier"] as? String) ?? "bronze"
+                let tierMult = tier == "gold" ? 3 : (tier == "silver" ? 2 : 1)
+                let award = coins * tierMult
+                print("💰 RewardsService: Current balance: \(current), Adding: \(award) (tier x\(tierMult))")
+                tx.setData(["coinBalance": current + award], forDocument: userRef, merge: true)
 
                 let ledgerRef = userRef.collection("coin_ledger").document("context_\(paymentId)")
                 let ledgerSnap = try tx.getDocument(ledgerRef)
                 if !ledgerSnap.exists {
                     tx.setData([
                         "type": "earn",
-                        "amount": coins,
-                        "note": "Context: \(title)",
+                        "amount": award,
+                        "note": tierMult > 1 ? "Context: \(title) (Tier x\(tierMult))" : "Context: \(title)",
                         "createdAt": FieldValue.serverTimestamp()
                     ], forDocument: ledgerRef)
+                    print("✅ RewardsService: Ledger entry created")
+                } else {
+                    print("⚠️ RewardsService: Ledger entry already exists, skipping")
                 }
 
                 // Mark context reward claimed
                 tx.setData(["status": "claimed", "claimedAt": FieldValue.serverTimestamp()], forDocument: contextRef, merge: true)
+                print("✅ RewardsService: Context reward marked as claimed")
             } catch {
+                print("❌ RewardsService: Transaction error - \(error.localizedDescription)")
                 errorPointer?.pointee = error as NSError
             }
             return nil
         }
+        print("✅ RewardsService: Context reward claim transaction completed")
     }
 }
 

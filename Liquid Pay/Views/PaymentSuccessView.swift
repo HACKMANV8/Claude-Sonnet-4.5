@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import FirebaseAuth
+import FirebaseFirestore
 
 struct PaymentSuccessView: View {
     @Environment(\.dismiss) private var dismiss
@@ -16,6 +17,7 @@ struct PaymentSuccessView: View {
     @State private var pendingReward: ContextReward? = nil
     @State private var rewardListener: ListenerRegistration? = nil
     @State private var isClaiming: Bool = false
+    @State private var isContextRewardClaimed: Bool = false
     @State private var showVoucherSheet: Bool = false
     @State private var suggestedBrand: String? = nil
     
@@ -137,20 +139,21 @@ struct PaymentSuccessView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             Button {
-                                claimContextReward(reward)
+                                if !isContextRewardClaimed { claimContextReward(reward) }
                             } label: {
                                 HStack {
-                                    Image(systemName: "star.fill")
-                                    Text(isClaiming ? "Claiming..." : "Claim +\(reward.coins) coins")
+                                    Image(systemName: isContextRewardClaimed ? "checkmark.seal.fill" : "star.fill")
+                                    Text(isContextRewardClaimed ? "Claimed" : (isClaiming ? "Claiming..." : "Claim +\(reward.coins) coins"))
                                         .fontWeight(.semibold)
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(Color.accentColor)
+                                .background(isContextRewardClaimed ? Color.green : Color.accentColor)
                                 .foregroundColor(.white)
                                 .cornerRadius(12)
+                                .opacity(isContextRewardClaimed ? 0.9 : 1)
                             }
-                            .disabled(isClaiming)
+                            .disabled(isClaiming || isContextRewardClaimed)
 
                             if let brand = suggestedBrand {
                                 Button {
@@ -293,11 +296,19 @@ struct PaymentSuccessView: View {
         }
         .onAppear {
             // Listen to Firestore context reward for this payment
+            print("🎬 PaymentSuccessView: onAppear - setting up listener for payment \(payment.id)")
             if let uid = Auth.auth().currentUser?.uid {
                 rewardListener?.remove(); rewardListener = nil
-                rewardListener = RewardsService.shared.listenToContextReward(uid: uid, paymentId: payment.id) { reward in
+                rewardListener = RewardsService.shared.listenToContextReward(uid: uid, paymentId: payment.id) { reward, claimed in
+                    print("📲 PaymentSuccessView: Listener callback - reward: \(reward != nil ? "YES" : "NO"), claimed: \(claimed ? "YES" : "NO")")
                     self.pendingReward = reward
+                    self.isContextRewardClaimed = claimed
+                    if let reward = reward {
+                        print("✅ PaymentSuccessView: Setting pendingReward - \(reward.title) (\(reward.coins) coins), claimed=\(claimed)")
+                    }
                 }
+            } else {
+                print("❌ PaymentSuccessView: No authenticated user")
             }
             // Infer e‑com brand from payee for voucher nudge
             let rec = (payeeName ?? "").lowercased()
@@ -338,17 +349,33 @@ struct PaymentSuccessView: View {
 // MARK: - Context Reward Claim
 extension PaymentSuccessView {
     private func claimContextReward(_ reward: ContextReward) {
-        guard !isClaiming else { return }
+        guard !isClaiming else {
+            print("⚠️ PaymentSuccessView: Already claiming, ignoring tap")
+            return
+        }
+        print("🎁 PaymentSuccessView: Claim button tapped for reward: \(reward.title)")
         isClaiming = true
         Task { @MainActor in
-            defer { self.isClaiming = false }
-            guard let uid = Auth.auth().currentUser?.uid else { return }
+            defer {
+                print("🔓 PaymentSuccessView: Resetting isClaiming flag")
+                self.isClaiming = false
+            }
+            guard let uid = Auth.auth().currentUser?.uid else {
+                print("❌ PaymentSuccessView: No authenticated user")
+                return
+            }
             do {
+                print("🎁 PaymentSuccessView: Calling RewardsService.claimContextReward")
                 try await RewardsService.shared.claimContextReward(uid: uid, paymentId: reward.paymentId)
+                print("✅ PaymentSuccessView: Claim successful, showing confetti")
+                self.isContextRewardClaimed = true
                 // Celebration
                 self.showConfetti = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    self.showConfetti = false
+                }
             } catch {
-                // no-op demo error handling
+                print("❌ PaymentSuccessView: Claim failed - \(error.localizedDescription)")
             }
         }
     }

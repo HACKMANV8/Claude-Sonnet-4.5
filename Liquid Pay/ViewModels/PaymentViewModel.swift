@@ -133,23 +133,28 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
             
             // Context Mission (Firestore): evaluate and create pending reward doc
             Task { @MainActor in
+                print("🎯 PaymentViewModel: Evaluating context mission for payment \(payment_id)")
+                print("   Amount: ₹\(Double(self.currentAmountPaise) / 100.0), Recipient: \(self.currentPayeeName ?? "nil")")
                 let offer = ContextRewardsEngine.evaluate(
                     amountPaise: self.currentAmountPaise,
                     recipient: self.currentPayeeName,
                     pci: nil,
                     streakDays: nil
                 )
-                if let offer = offer, let uid = Auth.auth().currentUser?.uid {
-                    await RewardsService.shared.setPendingContextRewardIfAbsent(uid: uid, paymentId: payment_id, title: offer.title, reason: offer.reason, coins: max(1, offer.coins))
+                if let offer = offer {
+                    print("✅ PaymentViewModel: Context mission matched! Creating reward...")
+                    if let uid = Auth.auth().currentUser?.uid {
+                        await RewardsService.shared.setPendingContextRewardIfAbsent(uid: uid, paymentId: payment_id, title: offer.title, reason: offer.reason, coins: max(1, offer.coins))
+                    } else {
+                        print("❌ PaymentViewModel: No authenticated user")
+                    }
+                } else {
+                    print("⚠️ PaymentViewModel: No context mission matched")
                 }
             }
 
-            // Optimistically award coins (server webhook also awards idempotently)
+            // Server awards coins (with tier + weekend). Send local notification only.
             Task {
-                guard let uid = Auth.auth().currentUser?.uid else { return }
-                try? await RewardsService.shared.awardCoinsForPayment(uid: uid, paymentId: payment_id, amountPaise: self.currentAmountPaise)
-                
-                // Send notification
                 NotificationService.shared.sendPaymentSuccessNotification(amount: self.currentAmountPaise, coinsEarned: coins)
             }
         }

@@ -16,7 +16,11 @@ service cloud.firestore {
     
     // Users collection - users can only access their own user document
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      // Disallow client changes to server-controlled fields
+      allow update: if request.auth != null && request.auth.uid == userId &&
+        !(request.resource.data.diff(resource.data).changedKeys().hasAny(["tier", "totalPayments"]));
       
       // Coin ledger - subcollection under users
       match /coin_ledger/{entryId} {
@@ -25,6 +29,11 @@ service cloud.firestore {
       
       // Vouchers - subcollection under users
       match /vouchers/{voucherId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // Context rewards - subcollection under users
+      match /context_rewards/{rewardId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
     }

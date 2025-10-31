@@ -23,32 +23,43 @@ enum ContextRewardsEngine {
         let weekday = cal.component(.weekday, from: now) // 1 Sun ... 7 Sat
         let hour = cal.component(.hour, from: now)
 
+        print("🎯 ContextRewardsEngine: Evaluating for recipient='\(rec)', amount=₹\(amountRupees)")
+        
         var base: ContextRewardOffer?
 
-        // Food: Zomato, Swiggy
-        if (rec.contains("zomato") || rec.contains("swiggy")) && amountRupees >= 150 {
-            base = ContextRewardOffer(title: "Food Bonus", reason: "Zomato/Swiggy order ≥ ₹150", coins: 50)
+        // Food: Zomato, Swiggy (lowered threshold to ₹1.50 for testing)
+        if (rec.contains("zomato") || rec.contains("swiggy")) && amountRupees >= 1.5 {
+            base = ContextRewardOffer(title: "Food Bonus", reason: "Zomato/Swiggy order ≥ ₹1.50", coins: 50)
+            print("✅ ContextRewardsEngine: Matched Food Bonus!")
         }
 
         // E-com: Flipkart, Amazon, Myntra
-        if base == nil, (rec.contains("flipkart") || rec.contains("amazon") || rec.contains("myntra")) && amountRupees >= 500 {
-            base = ContextRewardOffer(title: "Shopping Bonus", reason: "E‑commerce purchase ≥ ₹500", coins: 40)
+        if base == nil, (rec.contains("flipkart") || rec.contains("amazon") || rec.contains("myntra")) && amountRupees >= 5.0 {
+            base = ContextRewardOffer(title: "Shopping Bonus", reason: "E‑commerce purchase ≥ ₹5", coins: 40)
+            print("✅ ContextRewardsEngine: Matched Shopping Bonus!")
         }
 
         // Groceries: Blinkit, BigBasket (weekend morning window)
         let isWeekend = (weekday == 1 || weekday == 7)
         if base == nil, (rec.contains("blinkit") || rec.contains("bigbasket")) && isWeekend && (9...12).contains(hour) {
             base = ContextRewardOffer(title: "Groceries Bonus", reason: "Weekend 9–12 AM grocery run", coins: 30)
+            print("✅ ContextRewardsEngine: Matched Groceries Bonus!")
         }
 
-        guard var offer = base else { return nil }
+        guard var offer = base else {
+            print("❌ ContextRewardsEngine: No match")
+            return nil
+        }
 
         // Booster: PCI ≥ 700 or streak ≥ 7 → 1.2x
         let hasBooster = (pci ?? 0) >= 700 || (streakDays ?? 0) >= 7
         if hasBooster {
             let boosted = Int(round(Double(offer.coins) * 1.2))
             offer = ContextRewardOffer(title: offer.title + " (Boosted)", reason: offer.reason + " • Booster 1.2×", coins: boosted)
+            print("🚀 ContextRewardsEngine: Booster applied! Final coins: \(offer.coins)")
         }
+        
+        print("🎁 ContextRewardsEngine: Final offer: \(offer.title) - \(offer.coins) coins")
         return offer
     }
 }

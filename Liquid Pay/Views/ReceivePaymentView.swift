@@ -3,8 +3,6 @@ import CoreImage.CIFilterBuiltins
 import FirebaseAuth
 
 struct ReceivePaymentView: View {
-    @State private var amount: String = ""
-    @State private var note: String = ""
     @State private var showQRCode: Bool = false
     @State private var qrImage: UIImage?
     @Environment(\.dismiss) private var dismiss
@@ -12,93 +10,36 @@ struct ReceivePaymentView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                if !showQRCode {
-                    // Input form
-                    VStack(spacing: 16) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Amount (₹)").font(.headline)
-                            TextField("Enter amount", text: $amount)
-                                .keyboardType(.numberPad)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Note (Optional)").font(.headline)
-                            TextField("e.g., Coffee payment", text: $note)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        
-                        Button {
-                            generateQRCode()
-                        } label: {
-                            Text("Generate QR Code")
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.accentColor)
-                                .foregroundColor(.white)
-                                .cornerRadius(12)
-                        }
-                        .disabled(amount.isEmpty)
+                // QR Code display (no amount/note; payer enters on their side)
+                VStack(spacing: 24) {
+                    Text("Scan to Pay")
+                        .font(.title2)
+                        .bold()
+                    
+                    if let qrImage = qrImage {
+                        Image(uiImage: qrImage)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 250, height: 250)
+                            .padding()
+                            .background(Color.white)
+                            .cornerRadius(12)
+                            .shadow(radius: 4)
                     }
-                    .padding()
-                } else {
-                    // QR Code display
-                    VStack(spacing: 24) {
-                        Text("Scan to Pay")
-                            .font(.title2)
-                            .bold()
-                        
-                        if let qrImage = qrImage {
-                            Image(uiImage: qrImage)
-                                .interpolation(.none)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 250, height: 250)
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(12)
-                                .shadow(radius: 4)
-                        }
-                        
-                        VStack(spacing: 8) {
-                            Text("Amount: ₹\(amount)")
-                                .font(.title)
-                                .bold()
-                            if !note.isEmpty {
-                                Text(note)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        Button {
-                            if let qrImage = qrImage {
-                                shareQRCode(qrImage)
-                            }
-                        } label: {
-                            Label("Share QR Code", systemImage: "square.and.arrow.up")
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.blue)
-                                .foregroundColor(.white)
-                                .cornerRadius(12)
-                        }
-                        
-                        Button {
-                            showQRCode = false
-                            qrImage = nil
-                        } label: {
-                            Text("Generate New")
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color(.secondarySystemBackground))
-                                .foregroundColor(.primary)
-                                .cornerRadius(12)
-                        }
+                    
+                    Button {
+                        if let qrImage = qrImage { shareQRCode(qrImage) }
+                    } label: {
+                        Label("Share QR Code", systemImage: "square.and.arrow.up")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
                     }
-                    .padding()
                 }
-                
+                .padding()
                 Spacer()
             }
             .navigationTitle("Receive Payment")
@@ -110,33 +51,21 @@ struct ReceivePaymentView: View {
                     }
                 }
             }
+            .onAppear {
+                if !showQRCode { generateQRCode() }
+            }
         }
     }
     
     private func generateQRCode() {
-        guard let rupees = Int(amount), rupees > 0 else { return }
-        let amountPaise = rupees * 100
-        
-        let qrData = QRPaymentData(
-            merchantId: Auth.auth().currentUser?.uid,
-            merchantName: Auth.auth().currentUser?.phoneNumber,
-            amount: amountPaise,
-            billId: nil,
-            note: note.isEmpty ? nil : note
-        )
-        
-        // Generate URL format
-        var urlString = "liquidpay://pay?amount=\(amountPaise)"
-        if let merchant = qrData.merchantName {
-            urlString += "&merchant=\(merchant)"
-        }
-        if let merchantId = qrData.merchantId {
-            urlString += "&merchantId=\(merchantId)"
-        }
-        if let note = qrData.note {
-            urlString += "&note=\(note.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed) ?? note)"
-        }
-        
+        // Generate a generic pay QR with merchant identity; payer will enter amount and note
+        let merchantId = Auth.auth().currentUser?.uid ?? ""
+        let merchant = Auth.auth().currentUser?.phoneNumber ?? ""
+        var urlString = "liquidpay://pay"
+        var comps: [String] = []
+        if !merchant.isEmpty { comps.append("merchant=\(merchant)") }
+        if !merchantId.isEmpty { comps.append("merchantId=\(merchantId)") }
+        if !comps.isEmpty { urlString += "?" + comps.joined(separator: "&") }
         qrImage = generateQRCodeImage(from: urlString)
         showQRCode = true
     }

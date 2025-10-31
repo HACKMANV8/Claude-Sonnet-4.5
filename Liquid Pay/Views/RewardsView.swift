@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseAuth
+import FirebaseFirestore
 
 struct RewardsView: View {
     @State private var coinBalance: Int = 0
@@ -9,6 +10,12 @@ struct RewardsView: View {
     @State private var selectedBrand: BrandCard? = nil
     @State private var showRedeemSheet: Bool = false
     @State private var dailyRewardNext: Date? = nil
+    
+    // Tier state
+    @State private var userTier: String = "bronze"
+    @State private var totalPayments: Int = 0
+    @State private var tierListener: ListenerRegistration? = nil
+    @State private var showTierInfo: Bool = false
     
     private var coinValueInInr: String { String(format: "₹%.2f", Double(coinBalance) / 1000.0) }
     private let entryFee = 25
@@ -65,6 +72,7 @@ struct RewardsView: View {
         ScrollView {
         VStack(spacing: 16) {
                 header
+                tierCard
                 dailyRewardCard
                 gamesRow
                 vouchersCarousel
@@ -106,6 +114,9 @@ struct RewardsView: View {
                 Task { await redeemCoins(coins, note: "Bank redeem (test)") }
             }
         }
+        .sheet(isPresented: $showTierInfo) {
+            TierInfoSheet()
+        }
         .overlay { if isLoading { ProgressView() } }
         .onAppear { listen() }
     }
@@ -123,6 +134,60 @@ struct RewardsView: View {
             .padding()
             .background(Color.yellow.opacity(0.15))
             .cornerRadius(12)
+    }
+
+    private var tierCard: some View {
+        let (mult, nextTarget, progress, progressText, gradientColors) = tierComputed()
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                ZStack {
+                    Circle().fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 48, height: 48)
+                        .shadow(color: gradientColors.last!.opacity(0.3), radius: 6, x: 0, y: 3)
+                    Image(systemName: userTier == "gold" ? "crown.fill" : (userTier == "silver" ? "medal.fill" : "shield.fill"))
+                        .foregroundColor(.white)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(userTier.capitalized + " Tier").font(.headline)
+                    Text("Rewards x\(mult)").font(.subheadline).foregroundColor(.secondary)
+                }
+                Spacer()
+                HStack(spacing: 8) {
+                    Text(progressText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color(.tertiarySystemBackground))
+                        .cornerRadius(12)
+                    Button { showTierInfo = true } label: {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+                    .accessibilityLabel("How tiers work")
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(.tertiarySystemBackground))
+                        .frame(height: 10)
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(0, min(1, progress)) * UIScreen.main.bounds.width * 0.6, height: 10)
+                        .animation(.easeOut(duration: 0.6), value: progress)
+                }
+                Text(nextTarget == nil ? "Max tier achieved" : "\(max(0,totalPayments - (userTier == "silver" ? 500 : 0)))/\(nextTarget!) payments")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.secondarySystemBackground))
+        )
     }
     
     private var dailyRewardCard: some View {
@@ -257,6 +322,11 @@ struct RewardsView: View {
             self.coinBalance = balance
             self.isLoading = false
         }
+        tierListener?.remove(); tierListener = nil
+        tierListener = RewardsService.shared.listenToUserTier(uid: uid) { tier, total in
+            self.userTier = tier
+            self.totalPayments = total
+        }
     }
     
     private func claimDaily() async {
@@ -278,6 +348,20 @@ struct RewardsView: View {
         let h = secs/3600; let m = (secs%3600)/60
         if h > 0 { return "in \(h)h \(m)m" }
         return "in \(m)m"
+    }
+    
+    private func tierComputed() -> (Int, Int?, CGFloat, String, [Color]) {
+        let mult = userTier == "gold" ? 3 : (userTier == "silver" ? 2 : 1)
+        let nextTarget: Int? = (userTier == "gold") ? nil : (userTier == "silver" ? 1000 : 500)
+        let base = (userTier == "silver") ? 500 : 0
+        let denominator = CGFloat((nextTarget ?? totalPayments) - base)
+        let numerator = CGFloat(max(0, min(totalPayments, nextTarget ?? totalPayments) - base))
+        let progressDen = max(denominator, 1)
+        let progressNum = numerator
+        let progress = progressDen > 0 ? (progressNum / progressDen) : 1
+        let progressText = nextTarget == nil ? "" : "\(Int(progressNum))/\(Int(progressDen))"
+        let colors: [Color] = (userTier == "gold") ? [Color.yellow, Color.orange] : ((userTier == "silver") ? [Color.gray, Color.gray.opacity(0.7)] : [Color.brown.opacity(0.8), Color.orange.opacity(0.7)])
+        return (mult, nextTarget, progress, progressText, colors)
     }
     
     // MARK: - Ad Integration
@@ -305,6 +389,93 @@ private struct BrandCard: Identifiable { let id = UUID(); let name: String; let 
 
 // GamesSheet replaced by native SwiftUI game views
 
+// MARK: - Tier Info Sheet
+private struct TierInfoSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Header
+                    VStack(spacing: 8) {
+                        Text("Reward Tiers")
+                            .font(.system(size: 28, weight: .bold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Higher tiers multiply your coin earnings across payments, daily rewards, game wins, and context missions.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(20)
+                    .background(LinearGradient(colors: [.blue.opacity(0.8), .teal], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .foregroundColor(.white)
+                    .cornerRadius(16)
+
+                    // Bronze
+                    tierRow(icon: "shield.fill", title: "Bronze", color: .brown, details: [
+                        "Default tier",
+                        "0–500 successful payments",
+                        "Rewards x1"
+                    ])
+                    // Silver
+                    tierRow(icon: "medal.fill", title: "Silver", color: .gray, details: [
+                        "> 500 successful payments",
+                        "Rewards x2"
+                    ])
+                    // Gold
+                    tierRow(icon: "crown.fill", title: "Gold", color: .yellow, details: [
+                        "≥ 1000 successful payments",
+                        "Rewards x3"
+                    ])
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Notes")
+                            .font(.headline)
+                        Text("Tiers are updated automatically after each successful UPI payment. Multipliers stack with weekend bonuses where applicable.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(12)
+                }
+                .padding()
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func tierRow(icon: String, title: String, color: Color, details: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(color.opacity(0.2)).frame(width: 44, height: 44)
+                    Image(systemName: icon).foregroundColor(color).font(.system(size: 20, weight: .semibold))
+                }
+                Text(title).font(.headline)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(details, id: \.self) { d in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                        Text(d).font(.subheadline)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+}
+
 private struct VoucherRedeemSheet: View {
     let brand: BrandCard
     let balance: Int
@@ -321,84 +492,17 @@ private struct VoucherRedeemSheet: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 24) {
-                    // Header Card with Brand
-                    VStack(spacing: 16) {
-                        AsyncImage(url: URL(string: brand.logoURL)) { phase in
-                            switch phase {
-                            case .empty:
-                                ProgressView()
-                                    .tint(.white)
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFit()
-                            case .failure:
-                                Image(systemName: "giftcard")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .foregroundColor(.white)
-                            @unknown default:
-                                EmptyView()
-                            }
-                        }
-                        .frame(width: 64, height: 64)
-                        .padding(.top, 8)
-                        
-                        Text("Redeem \(brand.name) Voucher")
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.center)
-                        
-                        Text("Exchange your Liquid Coins for \(brand.name) voucher")
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.9))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
-                    .background(
-                        LinearGradient(
-                            colors: [brand.color, brand.color.opacity(0.8)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .cornerRadius(20)
-                    
-                    // Coins Input Card
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Enter Coins to Spend")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.primary)
-                        
+                VStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 12) {
-                            TextField("", text: $coinsText)
-                                .keyboardType(.numberPad)
-                                .font(.system(size: 36, weight: .bold, design: .rounded))
-                                .multilineTextAlignment(.center)
-                                .focused($isCoinsFieldFocused)
-                                .frame(height: 60)
-                                .background(Color(.secondarySystemBackground))
-                                .cornerRadius(16)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .stroke(isCoinsFieldFocused ? Color.accentColor : Color.clear, lineWidth: 2)
-                                )
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("coins")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(.secondary)
-                                
-                                if coinsToSpend >= brand.coinsRequired {
-                                    Text("≈ ₹\(coinsToSpend / 1000)")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.accentColor)
-                                }
-                            }
-                            .frame(width: 70, alignment: .leading)
+                            Text(brand.name)
+                                .font(.system(size: 26, weight: .bold))
+                                .foregroundColor(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text("Coins")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .frame(width: 70, alignment: .leading)
                         }
                         
                         // Balance and Requirements
@@ -411,18 +515,6 @@ private struct VoucherRedeemSheet: View {
                                 Text("\(balance) coins")
                                     .font(.system(size: 18, weight: .bold))
                                     .foregroundColor(.primary)
-                            }
-                            
-                            Divider()
-                            
-                            HStack {
-                                Text("Minimum Required")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("\(brand.coinsRequired) coins")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(balance >= brand.coinsRequired ? .green : .orange)
                             }
                             
                             if coinsToSpend > balance {
@@ -498,21 +590,21 @@ private struct VoucherRedeemSheet: View {
                                 .frame(height: 56)
                                 .background(
                                     LinearGradient(
-                                        colors: coinsToSpend <= balance ? [brand.color, brand.color.opacity(0.8)] : [Color.gray, Color.gray.opacity(0.8)],
+                                        colors: [brand.color, brand.color.opacity(0.8)],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     )
                                 )
                                 .cornerRadius(16)
-                                .shadow(color: coinsToSpend <= balance ? brand.color.opacity(0.3) : Color.clear, radius: 8, x: 0, y: 4)
+                                .shadow(color: brand.color.opacity(0.3), radius: 8, x: 0, y: 4)
                         }
-                        .disabled(coinsToSpend > balance || coinsToSpend < brand.coinsRequired)
-                        .opacity(coinsToSpend <= balance && coinsToSpend >= brand.coinsRequired ? 1.0 : 0.6)
+                        .disabled(coinsToSpend > balance)
+                        .opacity(coinsToSpend > balance ? 0.7 : 1.0)
                         
                         Button {
                             dismiss()
                         } label: {
-                            Text("Cancel")
+                            Text("Close")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(.secondary)
                                 .frame(maxWidth: .infinity)
@@ -652,18 +744,6 @@ private struct BankRedeemSheet: View {
                                     .foregroundColor(coinsNeeded <= balanceCoins ? .green : .orange)
                             }
                             
-                            Divider()
-                            
-                            HStack {
-                                Text("Daily Limit")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text("₹\(maxRupeesPerDay)")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.blue)
-                            }
-                            
                             // Error Messages
                             if let e = error {
                                 HStack(spacing: 8) {
@@ -676,18 +756,6 @@ private struct BankRedeemSheet: View {
                                 .padding()
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(Color.red.opacity(0.1))
-                                .cornerRadius(12)
-                            } else if rupeesToRedeem > maxRupeesPerDay {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundColor(.orange)
-                                    Text("Daily limit exceeded. Maximum ₹\(maxRupeesPerDay) per day.")
-                                        .font(.subheadline)
-                                        .foregroundColor(.orange)
-                                }
-                                .padding()
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.orange.opacity(0.1))
                                 .cornerRadius(12)
                             } else if coinsNeeded > balanceCoins {
                                 HStack(spacing: 8) {
@@ -767,17 +835,13 @@ private struct BankRedeemSheet: View {
     
     private var canRedeem: Bool {
         let rupees = max(1, Int(rupeesText) ?? 0)
-        let needed = rupees * 100
-        return rupees >= 1 && rupees <= maxRupeesPerDay && needed <= balanceCoins
+        let needed = rupees * 1000 // Fixed: 1000 coins = ₹1
+        return rupees >= 1 && needed <= balanceCoins
     }
     
     private func redeemTap() {
         let rupees = max(1, Int(rupeesText) ?? 0)
-        if rupees > maxRupeesPerDay {
-            error = "Daily limit exceeded. Maximum ₹\(maxRupeesPerDay) per day."
-            return
-        }
-        let needed = rupees * 100
+        let needed = rupees * 1000 // Fixed: 1000 coins = ₹1
         if needed > balanceCoins {
             error = "Insufficient coins. You need \(needed - balanceCoins) more coins."
             return

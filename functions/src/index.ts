@@ -108,8 +108,7 @@ app.post("/webhook", async (req: any, res: Response) => {
             // Weekend 2x multiplier
             const now = new Date();
             const day = now.getDay(); // 0 = Sun, 6 = Sat
-            const multiplier = (day === 0 || day === 6) ? 2 : 1;
-            const coins = baseCoins * multiplier;
+            const weekendMult = (day === 0 || day === 6) ? 2 : 1;
             const userRef = db.collection("users").doc(userId);
             const ledgerRef = userRef.collection("coin_ledger").doc(`payment_${paymentId}`);
 
@@ -118,11 +117,20 @@ app.post("/webhook", async (req: any, res: Response) => {
               if (ledgerDoc.exists) return; // already awarded
               const userDoc = await tx.get(userRef);
               const current = (userDoc.get("coinBalance") as number) || 0;
-              tx.set(userRef, { coinBalance: current + coins }, { merge: true });
+              const currentTotal = (userDoc.get("totalPayments") as number) || 0;
+              const newTotal = currentTotal + 1;
+              const tier = newTotal >= 1000 ? "gold" : (newTotal > 500 ? "silver" : "bronze");
+              const tierMult = tier === "gold" ? 3 : (tier === "silver" ? 2 : 1);
+              const coins = baseCoins * weekendMult * tierMult;
+              tx.set(userRef, { 
+                coinBalance: current + coins,
+                totalPayments: newTotal,
+                tier
+              }, { merge: true });
               tx.set(ledgerRef, {
                 type: "earn",
                 amount: coins,
-                note: multiplier > 1 ? `Payment ${paymentId} (Weekend x${multiplier})` : `Payment ${paymentId}`,
+                note: `Payment ${paymentId}${weekendMult>1?` (Weekend x${weekendMult})`:''}${tierMult>1?` (Tier x${tierMult})`:''}`,
                 createdAt: new Date(),
               });
             });
