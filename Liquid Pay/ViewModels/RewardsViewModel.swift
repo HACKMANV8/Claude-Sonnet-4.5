@@ -1,68 +1,53 @@
 import Foundation
-import FirebaseAuth
-import FirebaseFirestore
-
-@MainActor
-final class RewardsViewModel: ObservableObject {
-    @Published var points: Int = 0
-
-    private var listener: ListenerRegistration?
-
-    deinit { listener?.remove(); listener = nil }
-
-    func startListening() {
-        guard let uid = Auth.auth().currentUser?.uid else { return }
-        listener?.remove(); listener = nil
-        let query = Firestore.firestore()
-            .collection("payments")
-            .whereField("userId", isEqualTo: uid)
-            .whereField("status", isEqualTo: "success")
-
-        listener = query.addSnapshotListener { [weak self] snap, _ in
-            guard let docs = snap?.documents else { return }
-            let totalPaise = docs.reduce(0) { sum, doc in
-                sum + (doc.data()["amountPaise"] as? Int ?? 0)
-            }
-            self?.points = max(0, totalPaise / 100) // 1 point per INR
-        }
-    }
-}
-
-import Foundation
 import Combine
 import FirebaseAuth
 import FirebaseFirestore
 
 @MainActor
 final class RewardsViewModel: ObservableObject {
-    @Published var points: Int = 0
-    @Published var isLoading: Bool = false
+    @Published var coinBalance: Int = 0
+    @Published var recentEntries: [CoinEntry] = []
+    @Published var errorMessage: String?
+    @Published var canLoadMore: Bool = true
 
-    private var listener: ListenerRegistration?
+    private var listeners: (ListenerRegistration, ListenerRegistration)?
+    private var lastLedgerDoc: DocumentSnapshot?
 
-    deinit { listener?.remove(); listener = nil }
+    deinit {
+        listeners?.0.remove(); listeners?.1.remove(); listeners = nil
+    }
 
-    func start() {
+    func startListening() {
         guard let uid = Auth.auth().currentUser?.uid else { return }
-        isLoading = true
-        listener?.remove(); listener = nil
-        let query = Firestore.firestore()
-            .collection("payments")
-            .whereField("userId", isEqualTo: uid)
-            .whereField("status", isEqualTo: "success")
-
-        listener = query.addSnapshotListener { [weak self] snapshot, _ in
-            guard let self = self else { return }
-            let totalPaise = snapshot?.documents.reduce(0) { partial, doc in
-                partial + ((doc.data()["amountPaise"] as? Int) ?? 0)
-            } ?? 0
-            // Simple rule: 1 point per ₹1 spent
-            self.points = totalPaise / 100
-            self.isLoading = false
+        listeners?.0.remove(); listeners?.1.remove(); listeners = nil
+        listeners = RewardsService.shared.listenToBalanceAndEntries(uid: uid) { [weak self] balance, entries in
+            self?.coinBalance = balance
+            self?.recentEntries = entries
+            self?.canLoadMore = entries.count >= 20
+            self?.lastLedgerDoc = nil // will reset; pagination uses explicit fetch
+        }
+    }
+    
+    func redeem(amount: Int, note: String? = nil) async {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        do {
+            try await RewardsService.shared.redeemCoins(uid: uid, amount: amount, note: note)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
-    func stop() { listener?.remove(); listener = nil }
+    func loadMore() async {
+        guard let uid = Auth.auth().currentUser?.uid, canLoadMore else { return }
+        do {
+            let (more, last) = try await RewardsService.shared.fetchMoreLedger(uid: uid, after: lastLedgerDoc)
+            if more.isEmpty { canLoadMore = false; return }
+            recentEntries.append(contentsOf: more)
+            lastLedgerDoc = last
+            canLoadMore = more.count >= 20
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }
-
 

@@ -15,18 +15,13 @@ struct BillsListView: View {
                 NavigationLink(destination: BillDetailView(bill: bill)) {
                     HStack {
                         VStack(alignment: .leading) {
-                            Text("₹\(bill.amountPaise / 100)").font(.headline)
+                            Text(Currency.formatPaise(bill.amountPaise)).font(.headline)
                             if let date = bill.createdAt {
                                 Text(date.formatted()).font(.caption).foregroundColor(.secondary)
                             }
                         }
                         Spacer()
-                        Text(bill.status.capitalized)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(bill.status == "paid" ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
-                            .foregroundColor(bill.status == "paid" ? .green : .orange)
-                            .cornerRadius(6)
+                        StatusChip(text: bill.status)
                     }
                 }
             }

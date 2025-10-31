@@ -67,6 +67,7 @@ app.post("/webhook", async (req: any, res: Response) => {
     let status = "pending";
     let paymentId: string | undefined;
     let billId: string | undefined = paymentEntity?.notes?.billId || orderEntity?.notes?.billId;
+    const voucherId: string | undefined = paymentEntity?.notes?.voucherId || orderEntity?.notes?.voucherId;
     if (type === "payment.captured" || type === "order.paid") {
       status = "success";
       paymentId = paymentEntity?.id || event?.payload?.payment?.entity?.id;
@@ -85,6 +86,44 @@ app.post("/webhook", async (req: any, res: Response) => {
         },
         { merge: true }
       );
+
+      // Award Liquid Coins on successful payments (idempotent)
+      if (status === "success") {
+        try {
+          const paySnap = await db.collection("payments").doc(paymentId).get();
+          const userId: string | undefined = paySnap.get("userId");
+          const amountPaise: number | undefined = paySnap.get("amountPaise");
+          if (userId && typeof amountPaise === "number") {
+            const baseCoins = amountPaise; // 1 coin per paise (100 coins = ₹1)
+            // Weekend 2x multiplier
+            const now = new Date();
+            const day = now.getDay(); // 0 = Sun, 6 = Sat
+            const multiplier = (day === 0 || day === 6) ? 2 : 1;
+            const coins = baseCoins * multiplier;
+            const userRef = db.collection("users").doc(userId);
+            const ledgerRef = userRef.collection("coin_ledger").doc(`payment_${paymentId}`);
+
+            await db.runTransaction(async (tx) => {
+              const ledgerDoc = await tx.get(ledgerRef);
+              if (ledgerDoc.exists) return; // already awarded
+              const userDoc = await tx.get(userRef);
+              const current = (userDoc.get("coinBalance") as number) || 0;
+              tx.set(userRef, { coinBalance: current + coins }, { merge: true });
+              tx.set(ledgerRef, {
+                type: "earn",
+                amount: coins,
+                note: multiplier > 1 ? `Payment ${paymentId} (Weekend x${multiplier})` : `Payment ${paymentId}`,
+                createdAt: new Date(),
+              });
+            });
+          }
+          if (userId && voucherId) {
+            await db.collection("users").doc(userId).collection("vouchers").doc(voucherId).set({ status: "used", redeemedAt: new Date() }, { merge: true });
+          }
+        } catch (e) {
+          logger.error("coins award error", e);
+        }
+      }
     }
     if (billId && status === "success") {
       await db.collection("bills").doc(billId).set({ status: "paid" }, { merge: true });

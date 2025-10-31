@@ -3,14 +3,18 @@ import SwiftUI
 struct HomeView: View {
     @StateObject private var vm = HomeViewModel()
 
-    private func rupees(_ paise: Int) -> String { "₹\(paise/100)" }
+    private func rupees(_ paise: Int) -> String { Currency.formatPaise(paise) }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 HStack(spacing: 16) {
                     StatCard(title: "Total Spent", value: rupees(vm.totalPaidPaise), color: .blue)
-                    StatCard(title: "Last Payment", value: vm.recentPayments.first?.createdAt?.formatted(date: .abbreviated, time: .shortened) ?? "—", color: .green)
+                    StatCard(title: "This Month Spent", value: rupees(vm.thisMonthPaidPaise), color: .purple)
+                }
+
+                HStack(spacing: 16) {
+                    StatCard(title: "Last Payment", value: lastPaymentText, color: .green)
                 }
 
                 NavigationLink(destination: PayView()) {
@@ -23,26 +27,31 @@ struct HomeView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Recent Transactions").font(.headline)
-                    ForEach(vm.recentPayments.prefix(5)) { p in
-                        HStack {
-                            Text(rupees(p.amountPaise)).bold()
-                            Spacer()
-                            Text(p.status.capitalized)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(p.status == "success" ? Color.green.opacity(0.15) : (p.status == "failed" ? Color.red.opacity(0.15) : Color.orange.opacity(0.15)))
-                                .foregroundColor(p.status == "success" ? .green : (p.status == "failed" ? .red : .orange))
-                                .cornerRadius(6)
-                        }
+                    Text("Last 7 Days").font(.caption).foregroundColor(.secondary)
+                    SparklineView(values: vm.last7DaysPaise.map { Double($0) / 100.0 })
+                        .frame(height: 48)
                         .padding(.vertical, 6)
-                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(Color.accentColor.opacity(0.08))
+                .cornerRadius(12)
             }
             .padding()
         }
         .navigationTitle("Home")
         .onAppear { vm.startListening() }
+    }
+
+    private var lastPaymentText: String {
+        if let amount = vm.lastPaymentAmountPaise, let status = vm.lastPaymentStatus {
+            let statusPretty = status.capitalized
+            return "\(rupees(amount)) — \(statusPretty)"
+        }
+        if let d = vm.lastPaymentDate {
+            return d.formatted(date: .abbreviated, time: .shortened)
+        }
+        return "—"
     }
 }
 

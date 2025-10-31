@@ -13,9 +13,9 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
     private var currentOrderId: String?
     private var currentKeyId: String?
 
-    func startPayment(amountPaise: Int, billId: String) async {
+    func startPayment(amountPaise: Int, billId: String, notes: [String: String]? = nil) async {
         do {
-            let order = try await CloudFunctionsService.createOrder(amountPaise: amountPaise, billId: billId)
+            let order = try await CloudFunctionsService.createOrder(amountPaise: amountPaise, billId: billId, notes: notes)
             let checkout = RazorpayCheckout.initWithKey(order.keyId, andDelegateWithData: self)
             self.razorpay = checkout
             self.currentBillId = billId
@@ -31,6 +31,11 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
                 "order_id": order.orderId,
                 "notes": ["billId": billId]
             ]
+            if let notes = notes {
+                var merged = (options["notes"] as? [String: Any]) ?? [:]
+                for (k, v) in notes { merged[k] = v }
+                options["notes"] = merged
+            }
 
             options["prefill"] = [
                 "contact": Auth.auth().currentUser?.phoneNumber ?? "",
@@ -60,6 +65,17 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
         DispatchQueue.main.async { [weak self] in
             self?.lastResultMessage = "Payment success: \(payment_id)"
             Task { await self?.record(status: "success", paymentId: payment_id) }
+            // Optimistically award coins (server webhook also awards idempotently)
+            Task { [weak self] in
+                guard let self = self, let uid = Auth.auth().currentUser?.uid else { return }
+                try? await RewardsService.shared.awardCoinsForPayment(uid: uid, paymentId: payment_id, amountPaise: self.currentAmountPaise)
+                
+                // Calculate coins earned and send notification
+                let weekday = Calendar.current.component(.weekday, from: Date())
+                let isWeekend = (weekday == 1 || weekday == 7)
+                let coins = self.currentAmountPaise * (isWeekend ? 2 : 1)
+                NotificationService.shared.sendPaymentSuccessNotification(amount: self.currentAmountPaise, coinsEarned: coins)
+            }
         }
     }
 

@@ -10,7 +10,7 @@ struct BillDetailView: View {
             HStack {
                 Text("Amount")
                 Spacer()
-                Text("₹\(bill.amountPaise / 100)").bold()
+                Text(Currency.formatPaise(bill.amountPaise)).bold()
             }
             HStack {
                 Text("Status")
