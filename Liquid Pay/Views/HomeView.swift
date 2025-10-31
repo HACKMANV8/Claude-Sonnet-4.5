@@ -99,6 +99,21 @@ struct HomeView: View {
                 
                 // Global Rates Section
                 GlobalRatesView()
+                
+                // PCI Compact Card
+                NavigationLink(destination: PCIView()) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Payment Consistency Index").font(.caption).foregroundColor(.secondary)
+                            Text("View your PCI score and trend").font(.headline)
+                        }
+                        Spacer()
+                        Image(systemName: "gauge.high").foregroundColor(.accentColor)
+                    }
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(12)
+                }
             }
             .padding()
         }

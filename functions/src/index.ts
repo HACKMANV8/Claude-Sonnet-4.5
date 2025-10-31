@@ -7,6 +7,7 @@ import Razorpay from "razorpay";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
+import { updatePCI, pciDailyRecovery } from "./pci";
 
 initializeApp();
 const db = getFirestore();
@@ -117,6 +118,19 @@ app.post("/webhook", async (req: any, res: Response) => {
               });
             });
           }
+          // Update PCI (Payment Consistency Index)
+          try {
+            const userIdPCI: string | undefined = paySnap.get("userId");
+            const firstAttemptAt: Date | undefined = paySnap.get("firstAttemptAt")?.toDate?.() || undefined;
+            const createdAt: Date = (paymentEntity?.created_at ? new Date(paymentEntity.created_at * 1000) : new Date());
+            const onTime = !!firstAttemptAt ? ((createdAt.getTime() - firstAttemptAt.getTime()) <= 5*60*1000) : true;
+            const delayed = !!firstAttemptAt ? ((createdAt.getTime() - firstAttemptAt.getTime()) > 5*60*1000) : false;
+            if (userIdPCI) {
+              await updatePCI(userIdPCI, createdAt, { onTime, delayed, failedOnly: false });
+            }
+          } catch (e) {
+            logger.error("pci update error", e);
+          }
           if (userId && voucherId) {
             await db.collection("users").doc(userId).collection("vouchers").doc(voucherId).set({ status: "used", redeemedAt: new Date() }, { merge: true });
           }
@@ -124,6 +138,18 @@ app.post("/webhook", async (req: any, res: Response) => {
           logger.error("coins award error", e);
         }
       }
+    }
+    // Handle failed events for PCI (failed-only day marker)
+    try {
+      if (status === "failed") {
+        const uid = paymentEntity?.notes?.uid || orderEntity?.notes?.uid || undefined;
+        if (uid) {
+          const when = (paymentEntity?.created_at ? new Date(paymentEntity.created_at * 1000) : new Date());
+          await updatePCI(uid, when, { onTime: false, delayed: false, failedOnly: true });
+        }
+      }
+    } catch (e) {
+      logger.error("pci failed-day update error", e);
     }
     if (billId && status === "success") {
       await db.collection("bills").doc(billId).set({ status: "paid" }, { merge: true });

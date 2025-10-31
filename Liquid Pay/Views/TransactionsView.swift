@@ -53,7 +53,7 @@ struct TransactionsView: View {
                                 .font(.system(size: 24))
                                 .foregroundColor(payment.status == "success" ? .green : payment.status == "failed" ? .red : .orange)
                             
-                            VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 4) {
                                 Text(Currency.formatPaise(payment.amountPaise))
                                     .font(.headline)
                                 
@@ -76,10 +76,10 @@ struct TransactionsView: View {
                                     Text(date.formatted(date: .abbreviated, time: .shortened))
                                         .font(.caption)
                                         .foregroundColor(.secondary)
-                                }
-                            }
+                        }
+                    }
                             
-                            Spacer()
+                    Spacer()
                             
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 14))

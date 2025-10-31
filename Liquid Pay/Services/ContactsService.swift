@@ -89,7 +89,8 @@ final class ContactsService: ObservableObject {
                         let localStore = CNContactStore()
                         let localRequest = CNContactFetchRequest(keysToFetch: keys)
                         localRequest.sortOrder = .givenName
-
+                        
+                        // Use localStore to enumerate contacts
                         try localStore.enumerateContacts(with: localRequest) { contact, stop in
                             let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
                             guard !name.isEmpty || !contact.phoneNumbers.isEmpty || !contact.emailAddresses.isEmpty else {

@@ -18,6 +18,7 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
     private var currentOrderId: String?
     private var currentKeyId: String?
     private var currentPayeeName: String?
+    private var firstAttemptAt: Date?
 
     func startPayment(amountPaise: Int, billId: String, notes: [String: String]? = nil, payeeName: String? = nil) async {
         do {
@@ -29,6 +30,7 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
             self.currentOrderId = order.orderId
             self.currentKeyId = order.keyId
             self.currentPayeeName = payeeName
+            self.firstAttemptAt = Date()
 
             var options: [String: Any] = [
                 "amount": order.amount,
@@ -133,7 +135,7 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
     // MARK: - Persist
     private func record(status: String, paymentId: String?) async {
         guard let uid = Auth.auth().currentUser?.uid else { return }
-        try? await PaymentsService.shared.recordPayment(userId: uid, billId: currentBillId, amountPaise: currentAmountPaise, status: status, razorpayPaymentId: paymentId, orderId: currentOrderId, recipient: currentPayeeName)
+        try? await PaymentsService.shared.recordPayment(userId: uid, billId: currentBillId, amountPaise: currentAmountPaise, status: status, razorpayPaymentId: paymentId, orderId: currentOrderId, recipient: currentPayeeName, firstAttemptAt: firstAttemptAt)
     }
 }
 
