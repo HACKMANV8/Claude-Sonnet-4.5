@@ -27,7 +27,7 @@ struct DashboardView: View {
                     // Create a bill record first
                     if let uid = Auth.auth().currentUser?.uid {
                         if let billId = try? await BillsService.shared.createBill(userId: uid, amountPaise: paise) {
-                            payVM.startPayment(amountPaise: paise, orderId: nil, billId: billId)
+                            await payVM.startPayment(amountPaise: paise, billId: billId)
                         } else {
                             payVM.lastResultMessage = "Failed to create bill"
                         }

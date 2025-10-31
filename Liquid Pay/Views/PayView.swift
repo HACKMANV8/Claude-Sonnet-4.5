@@ -1,15 +1,12 @@
 import SwiftUI
 import FirebaseAuth
 
-struct PaymentTestView: View {
+struct PayView: View {
     @StateObject private var vm = PaymentViewModel()
     @State private var amountInInr: String = "1"
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("Razorpay Test Payment")
-                .font(.headline)
-
             HStack {
                 Text("Amount (INR)")
                 TextField("1", text: $amountInInr)
@@ -34,19 +31,17 @@ struct PaymentTestView: View {
                     .padding()
                     .background(Color.blue)
                     .foregroundColor(.white)
-                    .cornerRadius(8)
+                    .cornerRadius(10)
             }
 
             if let msg = vm.lastResultMessage {
-                Text(msg)
-                    .foregroundColor(msg.lowercased().contains("success") ? .green : .red)
-                    .multilineTextAlignment(.center)
+                Text(msg).foregroundColor(.secondary)
             }
 
             Spacer()
         }
         .padding()
-        .navigationTitle("Payment Test")
+        .navigationTitle("Pay")
     }
 }
 

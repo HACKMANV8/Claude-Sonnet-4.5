@@ -19,7 +19,7 @@ struct BillDetailView: View {
             }
 
             Button {
-                payVM.startPayment(amountPaise: bill.amountPaise, orderId: nil, billId: bill.id)
+                Task { await payVM.startPayment(amountPaise: bill.amountPaise, billId: bill.id) }
             } label: {
                 Text("Pay with Razorpay")
                     .frame(maxWidth: .infinity)

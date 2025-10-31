@@ -13,7 +13,7 @@ struct ContentView: View {
     var body: some View {
         Group {
             if authVM.isSignedIn {
-                NavigationView { DashboardView() }
+                MainTabView()
             } else {
                 PhoneSignInView()
             }

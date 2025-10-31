@@ -10,37 +10,42 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
     private var razorpay: RazorpayCheckout?
     private var currentBillId: String?
     private var currentAmountPaise: Int = 0
+    private var currentOrderId: String?
+    private var currentKeyId: String?
 
-    func startPayment(amountPaise: Int, orderId: String? = nil, billId: String? = nil) {
-        // Replace with your Razorpay Test Key ID from dashboard
-        let keyId = "rzp_test_RZmFoWh9WphMXu"
+    func startPayment(amountPaise: Int, billId: String) async {
+        do {
+            let order = try await CloudFunctionsService.createOrder(amountPaise: amountPaise, billId: billId)
+            let checkout = RazorpayCheckout.initWithKey(order.keyId, andDelegateWithData: self)
+            self.razorpay = checkout
+            self.currentBillId = billId
+            self.currentAmountPaise = amountPaise
+            self.currentOrderId = order.orderId
+            self.currentKeyId = order.keyId
 
-        let checkout = RazorpayCheckout.initWithKey(keyId, andDelegateWithData: self)
-        self.razorpay = checkout
-        self.currentBillId = billId
-        self.currentAmountPaise = amountPaise
+            var options: [String: Any] = [
+                "amount": order.amount,
+                "currency": order.currency,
+                "description": "LiquidPay Payment",
+                "theme": ["color": "#4C6EF5"],
+                "order_id": order.orderId,
+                "notes": ["billId": billId]
+            ]
 
-        var options: [String: Any] = [
-            "amount": amountPaise,          // paise
-            "currency": "INR",
-            "description": "LiquidPay Test Payment",
-            "theme": ["color": "#4C6EF5"],
-            "prefill": [
-                "contact": "9999999999",
+            options["prefill"] = [
+                "contact": Auth.auth().currentUser?.phoneNumber ?? "",
                 "email": "test@example.com"
             ]
-        ]
 
-        if let orderId = orderId {
-            options["order_id"] = orderId
+            guard let controller = Self.topMostViewController() else {
+                lastResultMessage = "Unable to present Razorpay checkout"
+                return
+            }
+
+            checkout.open(options, displayController: controller)
+        } catch {
+            lastResultMessage = "Failed to create order: \(error.localizedDescription)"
         }
-
-        guard let controller = Self.topMostViewController() else {
-            self.lastResultMessage = "Unable to find top view controller"
-            return
-        }
-
-        checkout.open(options, displayController: controller)
     }
 
     // MARK: - RazorpayPaymentCompletionProtocolWithData
@@ -70,10 +75,7 @@ final class PaymentViewModel: NSObject, ObservableObject, RazorpayPaymentComplet
     // MARK: - Persist
     private func record(status: String, paymentId: String?) async {
         guard let uid = Auth.auth().currentUser?.uid else { return }
-        try? await PaymentsService.shared.recordPayment(userId: uid, billId: currentBillId, amountPaise: currentAmountPaise, status: status, razorpayPaymentId: paymentId)
-        if let billId = currentBillId, status == "success" {
-            try? await BillsService.shared.updateBillStatus(billId: billId, status: "paid")
-        }
+        try? await PaymentsService.shared.recordPayment(userId: uid, billId: currentBillId, amountPaise: currentAmountPaise, status: status, razorpayPaymentId: paymentId, orderId: currentOrderId)
     }
 }
 
