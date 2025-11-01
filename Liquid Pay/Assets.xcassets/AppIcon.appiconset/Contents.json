@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "Your paragraph text (5) (1).png",
+      "filename" : "Liquid pay.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,7 +13,7 @@
           "value" : "dark"
         }
       ],
-      "filename" : "Your paragraph text (5) (1) 1.png",
+      "filename" : "Liquid pay 1.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -25,7 +25,7 @@
           "value" : "tinted"
         }
       ],
-      "filename" : "Your paragraph text (5) (1) 2.png",
+      "filename" : "Liquid pay 2.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"

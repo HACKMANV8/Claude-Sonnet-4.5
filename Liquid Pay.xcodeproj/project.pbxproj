@@ -57,16 +57,22 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		2CA955CC2EB2A2D3007535E3 /* Liquid Pay */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Liquid Pay";
 			sourceTree = "<group>";
 		};
 		2CA955DA2EB2A2D6007535E3 /* Liquid PayTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Liquid PayTests";
 			sourceTree = "<group>";
 		};
 		2CA955E42EB2A2D6007535E3 /* Liquid PayUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Liquid PayUITests";
 			sourceTree = "<group>";
 		};
@@ -311,13 +317,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Liquid Pay/Pods-Liquid Pay-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Liquid Pay/Pods-Liquid Pay-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -332,13 +334,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Liquid Pay/Pods-Liquid Pay-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Liquid Pay/Pods-Liquid Pay-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

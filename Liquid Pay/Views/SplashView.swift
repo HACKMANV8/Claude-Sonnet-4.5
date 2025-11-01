@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SplashView: View {
-    private let fullText = "LiquidPay"
+    private let fullText = "Liquid Pay"
     @State private var displayedText: String = ""
     @State private var typingTask: Task<Void, Never>?
     @State private var bufferPulse: Bool = false
