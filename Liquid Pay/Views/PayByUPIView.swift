@@ -31,6 +31,10 @@ struct PayByUPIView: View {
         self.initialAmount = initialAmount
         self.contactName = contactName
         self.upiSaveKey = upiSaveKey
+        
+        // Initialize @State properties with initial values in init
+        _upiId = State(initialValue: initialUPIId)
+        _amountInInr = State(initialValue: initialAmount)
     }
     
     // Computed property to use loaded vouchers if initial vouchers are empty
@@ -203,16 +207,25 @@ struct PayByUPIView: View {
         .navigationTitle("Pay by UPI ID")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            // Pre-fill UPI ID and amount from initial values
-            print("🔵 PayByUPIView onAppear - initialUPIId: '\(initialUPIId)', initialAmount: '\(initialAmount)'")
-            if !initialUPIId.isEmpty {
+            // Debug: Check what values we received
+            print("🔵 PayByUPIView onAppear")
+            print("   📋 initialUPIId: '\(initialUPIId)'")
+            print("   📋 initialAmount: '\(initialAmount)'")
+            print("   📋 Current upiId: '\(upiId)'")
+            print("   📋 Current amountInInr: '\(amountInInr)'")
+            print("   👤 contactName: '\(contactName ?? "nil")'")
+            
+            // Values should already be set via init, but double-check for safety
+            if !initialUPIId.isEmpty && upiId.isEmpty {
                 upiId = initialUPIId
-                print("✅ Setting upiId to: \(initialUPIId)")
+                print("⚠️ Had to manually set upiId in onAppear")
             }
-            if !initialAmount.isEmpty {
+            if !initialAmount.isEmpty && amountInInr.isEmpty {
                 amountInInr = initialAmount
-                print("✅ Setting amountInInr to: \(initialAmount)")
+                print("⚠️ Had to manually set amountInInr in onAppear")
             }
+            
+            print("✅ Final values - UPI: '\(upiId)', Amount: '\(amountInInr)'")
             
             // Load vouchers if not provided
             if vouchers.isEmpty, let uid = Auth.auth().currentUser?.uid {

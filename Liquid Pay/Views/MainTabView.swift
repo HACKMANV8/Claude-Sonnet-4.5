@@ -44,22 +44,38 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openPayWithUPI)) { note in
             if let upi = note.userInfo?["upiId"] as? String,
                let amountPaise = note.userInfo?["amountPaise"] as? Int {
-                print("🔔 MainTabView: Received openPayWithUPI - UPI: '\(upi)', Amount: \(amountPaise) paise")
+                print("🔔 MainTabView: Received openPayWithUPI notification")
+                print("   📋 Raw UPI: '\(upi)'")
+                print("   💰 Amount: \(amountPaise) paise (₹\(amountPaise/100))")
+                print("   👤 Contact: '\(note.userInfo?["contactName"] as? String ?? "nil")'")
+                
                 // First dismiss if already showing
                 if showQuickPay {
+                    print("   ⚠️ Sheet already showing, dismissing first...")
                     showQuickPay = false
                 }
+                
                 // Update values
                 self.quickUPI = upi
                 self.quickAmountRupees = String(max(1, amountPaise / 100))
                 self.quickContact = note.userInfo?["contactName"] as? String
-                print("✅ MainTabView: Set quickUPI='\(quickUPI)', quickAmountRupees='\(quickAmountRupees)', contact='\(quickContact ?? "nil")'")
+                
+                print("✅ MainTabView: Updated state variables")
+                print("   quickUPI: '\(self.quickUPI)'")
+                print("   quickAmountRupees: '\(self.quickAmountRupees)'")
+                print("   quickContact: '\(self.quickContact ?? "nil")'")
+                
                 selectedTab = 2 // Switch to Pay tab
+                
                 // Show sheet after a brief delay to ensure values are set
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    print("📱 MainTabView: Showing sheet with UPI='\(self.quickUPI)', Amount='\(self.quickAmountRupees)'")
+                    print("📱 MainTabView: Opening PayByUPIView sheet now...")
+                    print("   Will pass: UPI='\(self.quickUPI)', Amount='\(self.quickAmountRupees)', Contact='\(self.quickContact ?? "nil")'")
                     self.showQuickPay = true
                 }
+            } else {
+                print("❌ MainTabView: Missing UPI or amount in notification userInfo")
+                print("   userInfo: \(note.userInfo ?? [:])")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openReceive)) { _ in
